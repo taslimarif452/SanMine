@@ -1,4 +1,3 @@
-```
 /**
  * Universal Agent Brain Decision Engine
  *
