@@ -115,7 +115,7 @@ const searchBusinessesTool: AgentTool = {
       emitEvent?.({
         type: 'tool.completed',
         tool: 'search_businesses',
-        message: `Found ${result.businesses.length} businesses`,
+        message: `Discovered ${result.businesses.length} candidate listings (not yet verified)`,
         detail: `Provider: ${result.providerName}`,
       });
 

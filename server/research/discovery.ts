@@ -813,6 +813,14 @@ export function generateDiscoveryQueryVariations(
 ): Array<{ query: string; purpose: string }> {
   const variations: Array<{ query: string; purpose: string }> = [];
 
+  if (/\b(saas|software|crm|startup|startups)\b/i.test(query)) {
+    variations.push(
+      { query: locString ? `SaaS companies in ${locString}` : 'SaaS companies', purpose: 'saas_companies' },
+      { query: locString ? `${query} official website ${locString}` : `${query} official website`, purpose: 'official_website' }
+    );
+    return variations;
+  }
+
   if (isGeneric && locString) {
     variations.push(
       { query: `small businesses in ${locString}`, purpose: 'small_businesses' },
@@ -858,13 +866,14 @@ export async function discoverBusinessesViaWebResearch(
   let mergedCandidatesCount = 0;
   const rejections: Array<{ name: string; reason: string }> = [];
 
+  const queryLower = query.toLowerCase();
+  const isSaasOrSoftwareQuery =
+    /\b(saas|software|crm|startup|startups)\b/i.test(queryLower);
   const isGeneric =
-    !query ||
-    query.toLowerCase().includes('small business') ||
-    query.toLowerCase().includes('local business') ||
-    query.toLowerCase().includes('stores') ||
-    query.toLowerCase().includes('services') ||
-    query.toLowerCase().includes('companies');
+    !isSaasOrSoftwareQuery &&
+    (!query ||
+      queryLower.includes('small business') ||
+      queryLower.includes('local business'));
 
   // Generate multi-source discovery queries
   const queryVariations = generateDiscoveryQueryVariations(query, locString, isGeneric);
@@ -983,7 +992,9 @@ export async function discoverBusinessesViaWebResearch(
   // SOURCE 1: OpenStreetMap / Nominatim Open Web POI Discovery
   // ==========================================
   try {
-    const osmQueries = isGeneric && locString
+    const osmQueries = isSaasOrSoftwareQuery
+      ? []
+      : isGeneric && locString
       ? [
           `shop in ${locString}`,
           `restaurant in ${locString}`,

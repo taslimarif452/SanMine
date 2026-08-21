@@ -123,6 +123,8 @@ async function runLifecycleTests() {
         hasNoWebsiteVerified: true,
         status: 'EMAIL_SENT',
         email: 'gamma@salon.com',
+        emailStatus: 'VERIFIED',
+        pageInspected: true,
         proposalMarkdown: 'Pitch for Gamma',
         emailSent: true, // Fully complete!
       },
@@ -131,6 +133,30 @@ async function runLifecycleTests() {
 
   const completedCount = (brainDecisionEngine as any).countFullyCompletedEntities(mockTaskState);
   assert(completedCount === 1, 'Correctly identified only 1 entity as fully completed across all pipeline stages', `Got: ${completedCount}`);
+
+  const uninspectedDiscovered: any = {
+    plan: {
+      goal: 'Find 20 SaaS businesses and extract emails',
+      quantity: 20,
+      requestedFields: ['email'],
+      emailActionsRequired: false,
+      proposalRequired: false,
+      noWebsiteRequired: false,
+      constraints: [],
+    },
+    verifiedEntities: Array.from({ length: 20 }, (_, i) => ({
+      id: String(i + 1),
+      name: `Candidate ${i + 1}`,
+      status: 'DISCOVERED',
+      pageInspected: false,
+    })),
+  };
+  const uninspectedCompleted = (brainDecisionEngine as any).countFullyCompletedEntities(uninspectedDiscovered);
+  assert(
+    uninspectedCompleted === 0,
+    '20 DISCOVERED uninspected entities must not count as verified/completed',
+    `Got: ${uninspectedCompleted}`
+  );
 
   // Next action must be send_email for Beta Bakery
   const nextAction = (brainDecisionEngine as any).getDeterministicNextPipelineAction(mockTaskState);

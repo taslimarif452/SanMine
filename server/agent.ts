@@ -14,7 +14,7 @@ import { runAutonomousAgentLoop } from './agent/autonomousBrain.js';
 import { universalTaskPlanner } from './taskPlanner/planner.js';
 import { universalAgentBrain } from './agent/brain/index.js';
 import { resolveExecutionMode, isLeadingSlashCommand, stripLeadingSlash } from './agent/modeRouter.js';
-import { classifyUserIntent } from './agent/workIntent.js';
+import { classifyUserIntent, describeWorkPlanForUser } from './agent/workIntent.js';
 import { executeNormalChat } from './chat/normalChat.js';
 import {
   processBatchProposalPipeline,
@@ -833,6 +833,18 @@ export async function orchestrateAgentTask({
       ? { ...m, content: agentObjective }
       : m
   );
+
+  sendEvent({
+    type: 'task.started',
+    taskId,
+    prompt: agentObjective,
+    message: 'Understanding your request...',
+  });
+  sendEvent({
+    type: 'task.plan_created',
+    title: 'Intent',
+    message: describeWorkPlanForUser(agentObjective, { location: defaultLocation }),
+  });
 
   try {
     const result = await universalAgentBrain.executeTask({

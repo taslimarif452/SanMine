@@ -264,3 +264,30 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
     rawQuery,
   };
 }
+
+/**
+ * Human-readable work plan shown in live chat before tools run.
+ */
+export function describeWorkPlanForUser(
+  prompt: string,
+  extras?: {
+    quantity?: number;
+    location?: string;
+    requestedFields?: string[];
+    emailActionsRequired?: boolean;
+    proposalRequired?: boolean;
+  }
+): string {
+  const goal = parseWorkGoal(prompt, extras?.location);
+  const qty = extras?.quantity || goal.quantity || 1;
+  const loc = extras?.location || goal.location;
+  const fields = extras?.requestedFields?.length ? extras.requestedFields : goal.requestedFields;
+  const industry = goal.industry || 'companies';
+  const locBit = loc ? ` in ${loc}` : '';
+  const fieldBit = fields.length ? ` Extract ${fields.join(', ')}.` : '';
+  const extraBits: string[] = [];
+  if (extras?.proposalRequired || goal.proposalRequired) extraBits.push('draft proposals');
+  if (extras?.emailActionsRequired || goal.emailActionsRequired) extraBits.push('send outreach');
+  const extra = extraBits.length ? ` Then ${extraBits.join(' and ')}.` : '';
+  return `I'll find ${qty} ${industry}${locBit}, open official websites, and verify contacts.${fieldBit}${extra} Steps: search → open pages → extract → report.`;
+}

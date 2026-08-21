@@ -32,7 +32,42 @@ import { extractFoundersFromText, extractPricingFromText } from '../../research/
 import { taskCheckpointManager } from '../../task/checkpointManager.js';
 import { getGmailTokens } from '../../db/neon.js';
 import { getUserSmtpCredentials } from '../../db/smtp.js';
-import { isAffirmativeSendConfirmation, isNegativeConfirmation } from '../workIntent.js';
+import { describeWorkPlanForUser, isAffirmativeSendConfirmation, isNegativeConfirmation } from '../workIntent.js';
+
+function isSaasOrSoftwareQuery(text: string): boolean {
+  return /\b(saas|software|crm|startup|startups)\b/i.test(text || '');
+}
+
+function isNonBusinessSourceUrl(url: string): boolean {
+  if (!url) return true;
+  try {
+    const host = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.toLowerCase();
+    return /(?:^|\.)google\./.test(host)
+      || host.includes('bing.com')
+      || host.includes('duckduckgo.com')
+      || host.includes('justdial.com')
+      || host.includes('yelp.com')
+      || host.includes('maps.google');
+  } catch {
+    return true;
+  }
+}
+
+function entityDomain(url?: string | null): string {
+  if (!url) return '';
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function ensureStateCollections(state: BrainTaskState) {
+  if (!state.discoveredCandidates) state.discoveredCandidates = [];
+  if (!state.visitedUrls) state.visitedUrls = new Set<string>();
+  if (!state.visitedDomains) state.visitedDomains = new Set<string>();
+  if (!state.verifiedEntities) state.verifiedEntities = [];
+}
 
 export class BrainDecisionEngine {
   /**
@@ -272,6 +307,13 @@ export class BrainDecisionEngine {
 
       currentAction = plan.nextAction;
 
+      const workPlanText = describeWorkPlanForUser(prompt, {
+        quantity: plan.quantity,
+        location: plan.location,
+        requestedFields: plan.requestedFields,
+        emailActionsRequired: plan.emailActionsRequired,
+        proposalRequired: plan.proposalRequired,
+      });
       sendEvent({
         type: 'task.plan_created',
         plan: {
@@ -282,7 +324,8 @@ export class BrainDecisionEngine {
           requestedFields: plan.requestedFields,
           toolsRequired: plan.toolsRequired,
         },
-        message: `Goal: ${plan.goal}`,
+        message: workPlanText,
+        title: 'Intent',
       });
     }
 
@@ -475,7 +518,7 @@ export class BrainDecisionEngine {
       if (fullyCompletedCount >= targetQuantity && targetQuantity > 1) {
         sendEvent({
           type: 'task.progress',
-          message: `Reached target goal: verified and completed all pipeline stages for ${fullyCompletedCount}/${targetQuantity} items.`,
+          message: `Verified ${fullyCompletedCount}/${targetQuantity} after page inspection`,
         });
         state.status = 'COMPLETED';
         break;
@@ -792,14 +835,23 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       }
 
       // Record or update verified entity from live page inspection
-      if (toolResult?.success && pageUrl && !pageUrl.includes('google.com/search')) {
-        const existing = state.verifiedEntities.find((e) => e.url === pageUrl);
+      if (toolResult?.success && pageUrl && !isNonBusinessSourceUrl(pageUrl) && !pageUrl.includes('google.com/search')) {
+        const pageDomain = entityDomain(pageUrl);
+        const existing = state.verifiedEntities.find((e) =>
+          e.url === pageUrl
+          || (e.website && e.website === pageUrl)
+          || (pageDomain && (entityDomain(e.url) === pageDomain || entityDomain(e.website) === pageDomain))
+        );
         if (existing) {
+          existing.pageInspected = true;
           if (pageTitle && (!existing.name || existing.name === 'Discovered Organization')) {
             existing.name = pageTitle;
           }
           if (textContent && !existing.description) {
             existing.description = textContent.slice(0, 200).replace(/\s+/g, ' ');
+          }
+          if (existing.status === 'DISCOVERED' || existing.status === 'QUALIFIED' || existing.status === 'UNVERIFIED') {
+            existing.status = 'VERIFIED';
           }
         } else {
           try {
@@ -809,6 +861,7 @@ Generate the strict JSON BrainTaskPlan for this request.`;
               url: pageUrl,
               description: textContent ? textContent.slice(0, 200).replace(/\s+/g, ' ') : undefined,
               hasWebsite: true,
+              pageInspected: true,
               status: 'VERIFIED',
               facts: [],
             });
@@ -836,6 +889,11 @@ Generate the strict JSON BrainTaskPlan for this request.`;
 
         const outdatedFact = observation.extractedFacts.find((f) => f.field === 'website_status');
         if (outdatedFact && !matchedEntity.websiteStatus) matchedEntity.websiteStatus = outdatedFact.extractedValue;
+
+        matchedEntity.pageInspected = true;
+        if (!matchedEntity.email && matchedEntity.emailStatus !== 'VERIFIED') {
+          matchedEntity.emailStatus = 'NOT_FOUND';
+        }
       }
     } else if (action.toolName === 'analyze_website') {
       const pageUrl = action.toolArgs?.url;
@@ -1142,8 +1200,17 @@ Generate the strict JSON BrainTaskPlan for this request.`;
    */
   private countFullyCompletedEntities(state: BrainTaskState): number {
     const plan = state.plan;
-    return state.verifiedEntities.filter((ent) => {
-      // 1. Website constraint verification
+    const entities = Array.isArray(state.verifiedEntities) ? state.verifiedEntities : [];
+    return entities.filter((ent) => {
+      if (ent.status === 'REJECTED' || ent.status === 'FAILED' || ent.status === 'EXCLUDED') {
+        return false;
+      }
+
+      // Uninspected search hits are not verified leads
+      if (!ent.pageInspected && (ent.status === 'DISCOVERED' || ent.status === 'QUALIFIED' || !ent.status)) {
+        return false;
+      }
+
       const websiteVerification = evidenceProvenanceEngine.verifyWebsiteAbsence(ent);
       ent.websiteStatus = websiteVerification.websiteStatus;
       ent.hasWebsite = websiteVerification.hasWebsite;
@@ -1154,25 +1221,29 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         return false;
       }
 
-      // Missing requested fields are reported as "Not found" — they do not block quantity.
-      // 3. If proposal required, proposal must be generated
+      const emailRequested = Boolean(plan.requestedFields?.includes('email') || plan.emailActionsRequired);
+      if (emailRequested) {
+        const emailResolved =
+          ent.emailStatus === 'VERIFIED'
+          || (ent.pageInspected && ent.emailStatus === 'NOT_FOUND');
+        if (!emailResolved) return false;
+      }
+
       if (plan.proposalRequired && !ent.proposalMarkdown) {
         return false;
       }
 
-      // 4. If outreach was requested AND Gmail is connected AND the user authorized
-      //    sending (auto-send or explicit confirmation), wait until the send is attempted.
-      const shouldSend =
-        Boolean(
-          plan.emailActionsRequired &&
-            state.gmailConnected &&
-            (state.autoSendProposals || state.emailConfirmationGranted)
-        );
-      if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError) {
+     const shouldSend = Boolean(
+        plan.emailActionsRequired &&
+          state.gmailConnected &&
+          (state.autoSendProposals || state.emailConfirmationGranted)
+      );
+      if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError && ent.status !== 'PROCESSED') {
         return false;
       }
+      }
 
-      return ent.status !== 'REJECTED' && ent.status !== 'FAILED';
+      return true;
     }).length;
   }
 
@@ -1180,6 +1251,7 @@ Generate the strict JSON BrainTaskPlan for this request.`;
    * Updates state with new candidate URLs, tracked entities, action records, and facts from observation.
    */
   private updateStateWithObservation(state: BrainTaskState, observation: BrainObservation, action?: BrainActionDecision) {
+    ensureStateCollections(state);
     if (!state.actionRecords) {
       state.actionRecords = [];
     }
@@ -1205,7 +1277,12 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         const hasUrl = Boolean(cleanWebsite && cleanWebsite.trim() !== '');
         const verifiedNoWeb = Boolean(b.hasNoWebsiteVerified);
 
-        let existing = state.verifiedEntities.find((e) => e.name.toLowerCase() === b.name.toLowerCase());
+        const bizDomain = entityDomain(cleanWebsite);
+        let existing = state.verifiedEntities.find((e) =>
+          e.name.toLowerCase() === (b.name || '').toLowerCase()
+          || (cleanWebsite && (e.url === cleanWebsite || e.website === cleanWebsite))
+          || (bizDomain && (entityDomain(e.url) === bizDomain || entityDomain(e.website) === bizDomain))
+        );
         if (!existing) {
           existing = {
             id: `ent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1219,7 +1296,8 @@ Generate the strict JSON BrainTaskPlan for this request.`;
             email: b.email || null,
             address: b.address || undefined,
             rating: b.rating || undefined,
-            status: (state.plan.noWebsiteRequired && hasUrl) ? 'REJECTED' : 'QUALIFIED',
+            pageInspected: false,
+            status: (state.plan.noWebsiteRequired && hasUrl) ? 'REJECTED' : 'DISCOVERED',
             rejectionReason: (state.plan.noWebsiteRequired && hasUrl) ? 'Has active website' : undefined,
             facts: [],
             sources: [],
@@ -1432,7 +1510,8 @@ Generate the strict JSON BrainTaskPlan for this request.`;
     }
 
     // Remaining unvisited destination URLs from search candidates
-    const unvisitedCandidates = state.discoveredCandidates.filter((c) => !state.visitedUrls.has(c.url));
+    ensureStateCollections(state);
+    const unvisitedCandidates = (state.discoveredCandidates || []).filter((c) => !state.visitedUrls?.has(c.url));
 
     const promptContext = `### Task Plan
 - Goal: ${state.plan.goal}
@@ -1584,7 +1663,9 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
 
     // Check 3: Do we need to discover contact email/phone for qualified candidates?
     if (plan.requestedFields.includes('email') || plan.emailActionsRequired) {
-      const candNeedingEmail = qualifiedCandidates.find((e) => (!e.email || e.email.trim() === ''));
+      const candNeedingEmail = qualifiedCandidates.find((e) =>
+        e.emailStatus !== 'NOT_FOUND' && (!e.email || e.email.trim() === '')
+      );
       if (candNeedingEmail) {
         const contactQuery = `"${candNeedingEmail.name}" ${candNeedingEmail.address || plan.location || ''} contact email phone`;
         return {
@@ -1601,7 +1682,8 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     }
 
     // Check 4: If we have unvisited candidate URLs from search discovery, visit the next one
-    const unvisitedCandidates = state.discoveredCandidates.filter((c) => !state.visitedUrls.has(c.url));
+    ensureStateCollections(state);
+    const unvisitedCandidates = (state.discoveredCandidates || []).filter((c) => !state.visitedUrls?.has(c.url));
     if (unvisitedCandidates.length > 0) {
       const nextCandidate = unvisitedCandidates[0];
       return {
@@ -1777,7 +1859,8 @@ Auto-send setting: ${state.autoSendProposals ? 'on' : 'off'}`;
   }
 
   private pivotActionOnLoop(state: BrainTaskState, action: BrainActionDecision): BrainActionDecision {
-    const unvisited = state.discoveredCandidates.filter((c) => !state.visitedUrls.has(c.url));
+    ensureStateCollections(state);
+    const unvisited = (state.discoveredCandidates || []).filter((c) => !state.visitedUrls?.has(c.url));
     if (unvisited.length > 0) {
       return {
         type: 'execute_tool',

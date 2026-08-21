@@ -1291,9 +1291,23 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
           if (trimmed.startsWith('data: ')) {
             try {
-              const event: ExecutionEvent = JSON.parse(trimmed.slice(6));
+              const event: any = JSON.parse(trimmed.slice(6));
 
               // Handle event types
+              const humanToolLabel = (tool?: string) => {
+                const map: Record<string, string> = {
+                  google_search: 'Searching the web',
+                  search_businesses: 'Searching listings',
+                  browser_navigate: 'Opening page',
+                  browser_extract_content: 'Extracting page content',
+                  analyze_website: 'Inspecting website',
+                  deep_web_research: 'Researching sources',
+                  generate_proposal: 'Drafting proposal',
+                  send_email: 'Sending email',
+                };
+                return (tool && map[tool]) || event.title || event.message || (tool ? `Running ${tool}` : 'Working');
+              };
+
               if (event.type === 'task.started') {
                 setAgentStatus('thinking');
                 activeExecution = {
@@ -1314,6 +1328,72 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             ...activeExecution!,
                           },
                         }
+                      : msg
+                  )
+                );
+              } else if (event.type === 'task.plan_created') {
+                const planStep: ActivityStep = {
+                  id: 'step_intent',
+                  title: event.title || 'Intent',
+                  status: 'completed',
+                  detail: event.message || event.plan?.goal,
+                };
+                activeExecution = activeExecution
+                  ? {
+                      ...activeExecution,
+                      status: 'planning',
+                      summary: event.message || 'Plan ready',
+                      steps: [planStep, ...activeExecution.steps.filter((s) => s.id !== 'step_intent')],
+                    }
+                  : {
+                      status: 'planning',
+                      summary: event.message || 'Plan ready',
+                      steps: [planStep],
+                    };
+                setExecutionEvents((prev) => [...prev, event]);
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, execution: { id: `exec-${assistantMsgId}`, ...activeExecution! } }
+                      : msg
+                  )
+                );
+              } else if (event.type === 'task.candidates_discovered') {
+                const candStep: ActivityStep = {
+                  id: `step_candidates_${event.query || 'q'}`,
+                  title: 'Candidates found',
+                  status: 'completed',
+                  detail: event.message || `Discovered ${event.count || 0} listings to inspect`,
+                };
+                if (activeExecution) {
+                  activeExecution = { ...activeExecution, steps: [...activeExecution.steps, candStep] };
+                }
+                setExecutionEvents((prev) => [...prev, event]);
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, execution: activeExecution ? { id: `exec-${assistantMsgId}`, ...activeExecution } : msg.execution }
+                      : msg
+                  )
+                );
+              } else if (event.type === 'task.synthesizing') {
+                const synthStep: ActivityStep = {
+                  id: 'step_synthesizing',
+                  title: 'Compiling findings',
+                  status: 'running',
+                  detail: event.message || 'Writing verified report...',
+                };
+                if (activeExecution) {
+                  activeExecution = {
+                    ...activeExecution,
+                    steps: [...activeExecution.steps.filter((s) => s.id !== 'step_synthesizing'), synthStep],
+                  };
+                }
+                setExecutionEvents((prev) => [...prev, event]);
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, execution: activeExecution ? { id: `exec-${assistantMsgId}`, ...activeExecution } : msg.execution }
                       : msg
                   )
                 );
@@ -1357,12 +1437,12 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   )
                 );
               } else if (event.type === 'tool.started') {
-                const stepId = event.stepId || `step_${event.tool || 'tool'}`;
+                const stepId = event.stepId || `step_${event.tool || 'tool'}_${Date.now()}`;
                 const toolStep: ActivityStep = {
                   id: stepId,
-                  title: event.title || event.message || `Running ${event.tool}`,
+                  title: humanToolLabel(event.tool),
                   status: 'running',
-                  detail: event.detail,
+                  detail: event.detail || event.message,
                 };
 
                 activeExecution = activeExecution

@@ -115,6 +115,7 @@ export interface TrackedEntityState {
     | 'EMAIL_SENT'
     | 'REJECTED'
     | 'UNVERIFIABLE';
+  pageInspected?: boolean;
   verificationStatus?: 'VERIFIED' | 'UNVERIFIED' | 'REJECTED' | 'PARTIAL';
   verificationReason?: string;
   rejectionReason?: string;
