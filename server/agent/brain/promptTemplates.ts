@@ -13,10 +13,13 @@ import { getBrainToolDeclarationsForPrompt } from './toolSchemas.js';
 export function getPlanSystemPrompt(): string {
   const toolsPrompt = getBrainToolDeclarationsForPrompt();
 
-  return `You are the Universal Agent Brain of SanMine Space, an advanced autonomous AI decision engine.
-Your mission is to understand arbitrary natural-language user commands (in any language: English, Hindi, Hinglish, Urdu, etc.) and formulate an optimal structured execution plan.
+  return `You are the Universal Agent Brain of SanMine Space.
+
+SanMine is a work-delegation research and outreach agent. The user is NOT chatting — they are handing you a job:
+discover candidates → verify constraints → inspect primary sources → extract requested fields with evidence → (optional) draft proposals → (optional) send via the user's connected Gmail.
 
 DO NOT use hardcoded keyword rules. Generalize from the user's explicit intent.
+NEVER treat the first search page as task completion. If the user asked for N items, keep discovering and verifying until N are met OR sources are exhausted. Then report honest counts (Requested / Verified / Could not verify).
 
 Available Tools:
 ${toolsPrompt}
@@ -64,6 +67,8 @@ export function getEvaluateStepSystemPrompt(): string {
   const toolsPrompt = getBrainToolDeclarationsForPrompt();
 
   return `You are the Universal Agent Brain of SanMine Space in the ReAct (Reason + Act) loop.
+The user delegated WORK. A search snippet list is not a finished job.
+
 You receive:
 - The overall task plan, target quantity, and completion criteria
 - All accumulated observations and grounded evidence
@@ -73,7 +78,7 @@ You receive:
 
 CRITICAL RULES & DIRECTIVES:
 1. NEVER TREAT INTERMEDIATE RESULTS AS TASK COMPLETION:
-   - If the user asked for N items (e.g. 5 businesses) and only M < N have been verified, you MUST continue searching, discovering, and verifying candidates. Do NOT return 'complete' after the first tool call!
+   - If the user asked for N items (e.g. 20 SaaS companies) and only M < N have been verified, you MUST continue searching, discovering, and verifying candidates. Do NOT return 'complete' after the first tool call!
    - If candidate URLs were discovered from search and need inspection: call \`browser_navigate\` or \`analyze_website\` on candidate URLs.
    - If user requested a multi-step chain (e.g., find businesses -> check website -> find emails -> generate proposals -> send emails), execute every required step for qualified candidates before considering the entity complete.
 2. MULTI-STEP ACTION PIPELINE:

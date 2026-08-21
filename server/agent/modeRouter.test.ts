@@ -4,6 +4,7 @@ import {
   isLeadingSlashCommand,
   stripLeadingSlash,
 } from './modeRouter.js';
+import { isWorkDelegationTask, parseWorkGoal } from './workIntent.js';
 
 console.log('[TEST] Starting Slash Command Mode Router Tests...\n');
 
@@ -213,6 +214,58 @@ assert.strictEqual(
 
 console.log('✓ Test 4 Passed: Multi-turn continuation and return-to-chat work seamlessly.\n');
 
+// =========================================================================
+// TEST 5: Natural-language work delegation (NO slash required)
+// =========================================================================
+console.log('[TEST 5] Testing work delegation without a leading slash...');
+const workWithoutSlash = [
+  'Mujhe US mein 20 relevant SaaS companies find karo jo AI use karti hain',
+  'India mein 50 SaaS companies find karo jo 10–100 employees ki hain',
+  'US ke 30 restaurants find karo jinki websites outdated hain aur unke contact details collect karo',
+  'is website par jao aur pricing, services aur contact email nikalo: https://example.com',
+  'leads find karo, proposal generate karo aur Gmail se bhej do',
+  'Find 20 bakeries in Srinagar',
+];
+
+for (const prompt of workWithoutSlash) {
+  const result = resolveExecutionMode(prompt);
+  assert.strictEqual(
+    result.mode,
+    'agent',
+    `Expected work prompt "${prompt}" to resolve to agent, got ${result.mode}`
+  );
+  assert.strictEqual(
+    result.isExplicitSlashCommand,
+    false,
+    `Work prompt should not be treated as an explicit slash command: "${prompt}"`
+  );
+}
+console.log(`✓ Test 5 Passed: All ${workWithoutSlash.length} natural-language work goals activate Agent Mode.\n`);
+
+// =========================================================================
+// TEST 6: Work goal parser (quantity, location, outreach, fields)
+// =========================================================================
+console.log('[TEST 6] Testing work goal parser...');
+assert.strictEqual(isWorkDelegationTask('Hi'), false);
+assert.strictEqual(isWorkDelegationTask('Explain Python'), false);
+assert.strictEqual(isWorkDelegationTask('What is /api used for?'), false);
+
+const saasGoal = parseWorkGoal(
+  'Mujhe US mein 20 relevant SaaS companies find karo jo AI use karti hain, unki official websites check karo, founders aur contact email nikalo'
+);
+assert.strictEqual(saasGoal.isWorkTask, true, 'SaaS research is a work task');
+assert.strictEqual(saasGoal.quantity, 20, 'Quantity parsed as 20');
+assert.strictEqual(saasGoal.location, 'United States', 'US mapped to United States');
+assert.ok(saasGoal.requestedFields.includes('founder'), 'Founder field requested');
+assert.ok(saasGoal.requestedFields.includes('email'), 'Email field requested');
+assert.ok(saasGoal.constraints.some((c) => /AI/i.test(c)), 'AI constraint recorded');
+
+const sendGoal = parseWorkGoal('leads find karo, proposal generate karo aur Gmail se bhej do');
+assert.strictEqual(sendGoal.proposalRequired, true, 'Proposal required when asked');
+assert.strictEqual(sendGoal.emailActionsRequired, true, 'Email send required when asked to bhej do');
+
+console.log('✓ Test 6 Passed: Work goal parser extracts quantity, location, fields, and outreach flags.\n');
+
 console.log('====================================================');
-console.log('ALL SLASH COMMAND MODE ROUTER TESTS PASSED (4/4)!');
+console.log('ALL SLASH COMMAND MODE ROUTER TESTS PASSED (6/6)!');
 console.log('====================================================');

@@ -1,13 +1,16 @@
 /**
- * Slash Command Mode Router for SanMine Space
+ * Execution Mode Router for SanMine Space
  *
- * Enforces the core routing rule:
- * - Messages starting with '/' activate autonomous Agent Mode.
- * - Messages NOT starting with '/' remain in Normal Conversational Chat Mode.
- * - Only a leading slash (ignoring leading whitespace) activates Agent Mode.
- * - Slashes within normal messages (e.g. "/api", "https://...", "/usr/bin") do NOT trigger Agent Mode.
- * - Multi-turn agent follow-ups within an active agent session remain in Agent Mode.
+ * SanMine is a work-delegation agent. Users should not need a leading '/'
+ * to start research, lead-finding, proposal, or outreach work.
+ *
+ * - Leading '/' always activates Agent Mode.
+ * - Natural-language work goals also activate Agent Mode.
+ * - Casual chat / explanations stay in Normal Chat.
+ * - In-message slashes ("/api", "https://...") do not trigger Agent Mode.
  */
+
+import { isWorkDelegationTask } from './workIntent.js';
 
 export type ExecutionMode = 'normal_chat' | 'agent';
 
@@ -185,7 +188,18 @@ export function resolveExecutionMode(
     };
   }
 
-  // 3. Default -> NORMAL CONVERSATIONAL CHAT MODE
+  // 3. Natural-language work delegation (research, leads, proposals, outreach)
+  if (isWorkDelegationTask(rawPrompt)) {
+    return {
+      mode: 'agent',
+      isExplicitSlashCommand: false,
+      isAgentContinuation: false,
+      normalizedPrompt: rawPrompt,
+      rawPrompt,
+    };
+  }
+
+  // 4. Default -> NORMAL CONVERSATIONAL CHAT MODE
   return {
     mode: 'normal_chat',
     isExplicitSlashCommand: false,

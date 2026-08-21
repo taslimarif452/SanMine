@@ -3,6 +3,7 @@ import { conductWebResearch, fetchWebPage, performGoogleWebSearch, executeGeneri
 import { browserTools } from './browser/index.js';
 import { sendGmailMessage } from './gmail/oauth.js';
 import { sendGmailSmtpMessage } from './gmail/smtp.js';
+import { checkEmailAlreadySent, logOutreachAttempt } from './db/outreach.js';
 
 export interface ToolExecutionContext {
   userId?: string;
@@ -925,6 +926,29 @@ export const sendEmailTool: AgentTool = {
       throw new Error(`Invalid recipient email address: "${to}". A valid email address is required.`);
     }
 
+    if (userId && userId !== 'anonymous') {
+      const alreadySent = await checkEmailAlreadySent(userId, to);
+      if (alreadySent) {
+        await logOutreachAttempt({
+          userId,
+          recipientEmail: to,
+          businessName,
+          status: 'skipped',
+          reason: 'already_contacted',
+          subject,
+        });
+        return {
+          success: false,
+          skipped: true,
+          reason: 'already_contacted',
+          to,
+          businessName,
+          subject,
+          error: 'Already contacted this recipient within the last 30 days.',
+        };
+      }
+    }
+
     // Try Gmail OAuth first
     let res = await sendGmailMessage({
       userId,
@@ -951,7 +975,32 @@ export const sendEmailTool: AgentTool = {
     }
 
     if (!res.success) {
-      throw new Error(res.error || 'Failed to dispatch email via connected mail provider.');
+      if (userId && userId !== 'anonymous') {
+        await logOutreachAttempt({
+          userId,
+          recipientEmail: to,
+          businessName,
+          subject,
+          status: 'failed',
+          errorMessage: res.error || 'Failed to dispatch email via connected mail provider.',
+        });
+      }
+      throw new Error(
+        res.error?.includes('GMAIL_NOT_CONNECTED') || res.error?.includes('GMAIL_NOT_CONFIGURED')
+          ? 'Gmail is not connected. Connect Gmail (OAuth or SMTP) in Settings to send proposals.'
+          : res.error || 'Failed to dispatch email via connected mail provider.'
+      );
+    }
+
+    if (userId && userId !== 'anonymous') {
+      await logOutreachAttempt({
+        userId,
+        recipientEmail: to,
+        businessName,
+        subject,
+        messageId: res.messageId,
+        status: 'sent',
+      });
     }
 
     return {
