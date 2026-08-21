@@ -1896,4 +1896,4 @@ Auto-send setting: ${state.autoSendProposals ? 'on' : 'off'}`;
 }
 
 export const brainDecisionEngine = new BrainDecisionEngine();
-```
+
