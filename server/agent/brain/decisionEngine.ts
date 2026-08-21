@@ -33,6 +33,76 @@ import { taskCheckpointManager } from '../../task/checkpointManager.js';
 import { getGmailTokens } from '../../db/neon.js';
 import { getUserSmtpCredentials } from '../../db/smtp.js';
 
+/**
+ * Hosts that are search engines, directories, or aggregators — pages on these
+ * domains must never be turned into "company" entities.
+ */
+const NON_BUSINESS_SOURCE_HOSTS = [
+  'google.com',
+  'google.co.in',
+  'bing.com',
+  'duckduckgo.com',
+  'search.yahoo.com',
+  'justdial.com',
+  'yelp.com',
+  'sulekha.com',
+  'indiamart.com',
+  'yellowpages.com',
+  'yellowpages.in',
+  'tripadvisor.com',
+  'tradeindia.com',
+  'mouthshut.com',
+];
+
+/**
+ * Returns true when a URL points at a search engine results page or a
+ * business directory/aggregator rather than an actual company website.
+ */
+export function isNonBusinessSourceUrl(url: string | null | undefined): boolean {
+  if (!url) return true;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    return NON_BUSINESS_SOURCE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Detects SaaS / software / tech-company style queries where local business
+ * providers (OpenStreetMap, local shop directories) are useless.
+ */
+export function isSaasLikeQuery(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /\b(saas|software|crm|erp|startups?|tech\s+compan(?:y|ies)|it\s+compan(?:y|ies)|app\s+develop\w*|web\s+develop\w*|api|cloud|fintech|edtech|healthtech)\b/i.test(text);
+}
+
+function safeDomainOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Guards against checkpoint deserialization or partial states missing
+ * collection fields — prevents "cannot read properties of undefined" crashes.
+ */
+function ensureStateCollections(state: BrainTaskState): void {
+  if (!Array.isArray(state.verifiedEntities)) state.verifiedEntities = [];
+  if (!Array.isArray(state.discoveredCandidates)) state.discoveredCandidates = [];
+  if (!Array.isArray(state.observations)) state.observations = [];
+  if (!Array.isArray(state.extractedFacts)) state.extractedFacts = [];
+  if (!Array.isArray(state.evidence)) state.evidence = [];
+  if (!Array.isArray(state.failedActions)) state.failedActions = [];
+  if (!(state.visitedUrls instanceof Set)) state.visitedUrls = new Set(Array.isArray(state.visitedUrls as any) ? (state.visitedUrls as any) : []);
+  if (!(state.visitedDomains instanceof Set)) state.visitedDomains = new Set(Array.isArray(state.visitedDomains as any) ? (state.visitedDomains as any) : []);
+  if (!(state.executedActionIds instanceof Set)) state.executedActionIds = new Set(Array.isArray(state.executedActionIds as any) ? (state.executedActionIds as any) : []);
+  if (!Array.isArray(state.actionRecords)) state.actionRecords = [];
+}
+
 export class BrainDecisionEngine {
   /**
    * Executes the autonomous ReAct decision loop for arbitrary natural-language requests.
@@ -429,7 +499,7 @@ export class BrainDecisionEngine {
       if (fullyCompletedCount >= targetQuantity && targetQuantity > 1) {
         sendEvent({
           type: 'task.progress',
-          message: `Reached target goal: verified and completed all pipeline stages for ${fullyCompletedCount}/${targetQuantity} items.`,
+          message: `Verified ${Math.min(fullyCompletedCount, targetQuantity)}/${targetQuantity} after page inspection.`,
         });
         state.status = 'COMPLETED';
         break;
@@ -587,6 +657,7 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       sendEvent: (event: any) => void;
     }
   ): Promise<BrainObservation> {
+    ensureStateCollections(state);
     const startTime = Date.now();
     let success = false;
     let toolResult: any = null;
@@ -672,6 +743,7 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       const businesses = Array.isArray(toolResult?.businesses) ? toolResult.businesses : [];
       observation.extractedData = toolResult;
       for (const b of businesses) {
+        if (b.website && isNonBusinessSourceUrl(b.website)) continue;
         if (b.website && !state.discoveredCandidates.some((c) => c.url === b.website)) {
           state.discoveredCandidates.push({
             url: b.website,
@@ -711,15 +783,28 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         } catch {}
       }
 
-      // Record or update verified entity from live page inspection
-      if (toolResult?.success && pageUrl && !pageUrl.includes('google.com/search')) {
-        const existing = state.verifiedEntities.find((e) => e.url === pageUrl);
+      // Record or update entity from live page inspection.
+      // Search engine / directory pages must never become company entities.
+      if (toolResult?.success && pageUrl && !isNonBusinessSourceUrl(pageUrl)) {
+        const pageDomain = safeDomainOf(pageUrl);
+        // Update an existing entity matched by exact URL or by domain, instead
+        // of registering every visited page as a brand-new business.
+        const existing = state.verifiedEntities.find((e) => {
+          const entUrl = e.url || e.website;
+          if (entUrl === pageUrl) return true;
+          const entDomain = safeDomainOf(entUrl);
+          return Boolean(pageDomain && entDomain && pageDomain === entDomain);
+        });
         if (existing) {
           if (pageTitle && (!existing.name || existing.name === 'Discovered Organization')) {
             existing.name = pageTitle;
           }
           if (textContent && !existing.description) {
             existing.description = textContent.slice(0, 200).replace(/\s+/g, ' ');
+          }
+          existing.pageInspected = true;
+          if (existing.status === 'DISCOVERED' || existing.status === 'QUALIFIED' || !existing.status) {
+            existing.status = 'VERIFIED';
           }
         } else {
           try {
@@ -730,9 +815,22 @@ Generate the strict JSON BrainTaskPlan for this request.`;
               description: textContent ? textContent.slice(0, 200).replace(/\s+/g, ' ') : undefined,
               hasWebsite: true,
               status: 'VERIFIED',
+              pageInspected: true,
               facts: [],
             });
           } catch {}
+        }
+      }
+
+      // Mark candidates from this domain as inspected even when the page is a
+      // directory/search page, so we never re-loop on them.
+      if (pageUrl) {
+        const pageDomain = safeDomainOf(pageUrl);
+        for (const ent of state.verifiedEntities) {
+          const entDomain = safeDomainOf(ent.url || ent.website);
+          if (pageDomain && entDomain && pageDomain === entDomain) {
+            ent.pageInspected = true;
+          }
         }
       }
 
@@ -740,13 +838,23 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       this.extractFactsFromPageContent(pageUrl, pageTitle, textContent, observation.extractedFacts);
 
       // Attach extracted phone/email/services to verified entity
-      const matchedEntity = state.verifiedEntities.find((e) => e.url === pageUrl);
+      const pageDomainForMatch = safeDomainOf(pageUrl);
+      const matchedEntity = state.verifiedEntities.find((e) => {
+        const entUrl = e.url || e.website;
+        if (entUrl === pageUrl) return true;
+        const entDomain = safeDomainOf(entUrl);
+        return Boolean(pageDomainForMatch && entDomain && pageDomainForMatch === entDomain);
+      });
       if (matchedEntity) {
         const phoneFact = observation.extractedFacts.find((f) => f.field === 'phone');
         if (phoneFact && !matchedEntity.phone) matchedEntity.phone = phoneFact.extractedValue;
 
         const emailFact = observation.extractedFacts.find((f) => f.field === 'email');
-        if (emailFact && !matchedEntity.email) matchedEntity.email = emailFact.extractedValue;
+        if (emailFact && !matchedEntity.email) {
+          matchedEntity.email = emailFact.extractedValue;
+          matchedEntity.emailStatus = 'VERIFIED';
+          matchedEntity.emailSourceUrl = emailFact.sourceUrl;
+        }
 
         const serviceFact = observation.extractedFacts.find((f) => f.field === 'services');
         if (serviceFact && !matchedEntity.services) matchedEntity.services = serviceFact.extractedValue;
@@ -797,6 +905,7 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         state.verifiedEntities.push({
           ...ent,
           status: 'VERIFIED',
+          pageInspected: true,
           facts: [],
         });
       }
@@ -1061,8 +1170,23 @@ Generate the strict JSON BrainTaskPlan for this request.`;
    * Counts entities that have completed ALL required pipeline stages and satisfied all constraints.
    */
   private countFullyCompletedEntities(state: BrainTaskState): number {
+    ensureStateCollections(state);
     const plan = state.plan;
     return state.verifiedEntities.filter((ent) => {
+      if (ent.status === 'REJECTED' || ent.status === 'FAILED') {
+        return false;
+      }
+
+      // 0. Raw search hits are NOT completed leads. An entity that is merely
+      // DISCOVERED/QUALIFIED (or has no status) and whose page was never
+      // actually inspected must never count toward the target quantity.
+      const isUninspectedDiscovery =
+        (!ent.status || ent.status === 'DISCOVERED' || ent.status === 'QUALIFIED' || ent.status === 'UNVERIFIED') &&
+        ent.pageInspected !== true;
+      if (isUninspectedDiscovery) {
+        return false;
+      }
+
       // 1. Website constraint verification
       const websiteVerification = evidenceProvenanceEngine.verifyWebsiteAbsence(ent);
       ent.websiteStatus = websiteVerification.websiteStatus;
@@ -1074,20 +1198,37 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         return false;
       }
 
-      // Missing requested fields are reported as "Not found" — they do not block quantity.
+      // 2. If emails were explicitly requested, the entity is complete only when
+      // its email is actually VERIFIED, or its page was inspected and the email
+      // was conclusively NOT_FOUND (reported honestly as "Not found").
+      const emailRequested = Boolean(plan.requestedFields?.includes('email') || plan.emailActionsRequired);
+      if (emailRequested) {
+        const emailVerified = Boolean(ent.email) && (ent.emailStatus === 'VERIFIED' || ent.emailSent === true);
+        const emailExhausted = ent.pageInspected === true && ent.emailStatus === 'NOT_FOUND';
+        if (!emailVerified && !emailExhausted) {
+          return false;
+        }
+      }
+
       // 3. If proposal required, proposal must be generated
       if (plan.proposalRequired && !ent.proposalMarkdown) {
         return false;
       }
 
-      // 4. If outreach was requested AND Gmail is connected AND this entity has an email, wait until send is attempted
-      const shouldSend =
-        Boolean(plan.emailActionsRequired && state.gmailConnected && (state.autoSendProposals || plan.emailActionsRequired));
-      if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError) {
-        return false;
+      // 4. If outreach sending was requested, the entity counts only after the
+      // send was actually attempted: emailSent, emailSendError, or PROCESSED.
+      if (plan.emailActionsRequired) {
+        const sendResolved =
+          ent.emailSent === true ||
+          Boolean(ent.emailSendError) ||
+          ent.status === 'PROCESSED' ||
+          (ent.pageInspected === true && ent.emailStatus === 'NOT_FOUND');
+        if (!sendResolved) {
+          return false;
+        }
       }
 
-      return ent.status !== 'REJECTED' && ent.status !== 'FAILED';
+      return true;
     }).length;
   }
 
@@ -1095,9 +1236,7 @@ Generate the strict JSON BrainTaskPlan for this request.`;
    * Updates state with new candidate URLs, tracked entities, action records, and facts from observation.
    */
   private updateStateWithObservation(state: BrainTaskState, observation: BrainObservation, action?: BrainActionDecision) {
-    if (!state.actionRecords) {
-      state.actionRecords = [];
-    }
+    ensureStateCollections(state);
 
     if (observation.searchState?.candidateUrls) {
       for (const cand of observation.searchState.candidateUrls) {
@@ -1112,15 +1251,34 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       }
     }
 
-    // Process business search results
+    // Process business search results.
+    // Raw search hits are candidate listings only: they enter the pipeline as
+    // DISCOVERED and must be verified via page inspection before completion.
     if (action?.toolName === 'search_businesses' && observation.extractedData?.businesses) {
       const businesses = Array.isArray(observation.extractedData.businesses) ? observation.extractedData.businesses : [];
       for (const b of businesses) {
+        if (!b?.name) continue;
         const cleanWebsite = b.website ? evidenceProvenanceEngine.normalizeSourceUrl(b.website) : null;
+
+        // Never turn search engine / directory pages into company entities
+        if (cleanWebsite && isNonBusinessSourceUrl(cleanWebsite)) {
+          continue;
+        }
+
         const hasUrl = Boolean(cleanWebsite && cleanWebsite.trim() !== '');
         const verifiedNoWeb = Boolean(b.hasNoWebsiteVerified);
+        const candDomain = safeDomainOf(cleanWebsite);
 
-        let existing = state.verifiedEntities.find((e) => e.name.toLowerCase() === b.name.toLowerCase());
+        // Match existing entity by name, URL, or domain — update instead of
+        // creating a new "business" for every page mentioning the same company.
+        let existing = state.verifiedEntities.find((e) => {
+          if (e.name && b.name && e.name.toLowerCase() === b.name.toLowerCase()) return true;
+          const entUrl = e.url || e.website;
+          if (cleanWebsite && entUrl && evidenceProvenanceEngine.normalizeSourceUrl(entUrl) === cleanWebsite) return true;
+          const entDomain = safeDomainOf(entUrl);
+          if (candDomain && entDomain && candDomain === entDomain) return true;
+          return false;
+        });
         if (!existing) {
           existing = {
             id: `ent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1134,8 +1292,9 @@ Generate the strict JSON BrainTaskPlan for this request.`;
             email: b.email || null,
             address: b.address || undefined,
             rating: b.rating || undefined,
-            status: (state.plan.noWebsiteRequired && hasUrl) ? 'REJECTED' : 'QUALIFIED',
+            status: (state.plan.noWebsiteRequired && hasUrl) ? 'REJECTED' : 'DISCOVERED',
             rejectionReason: (state.plan.noWebsiteRequired && hasUrl) ? 'Has active website' : undefined,
+            pageInspected: false,
             facts: [],
             sources: [],
             actionRecords: [],
@@ -1375,14 +1534,17 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
    * Deterministic pipeline router ensuring every required multi-step stage is executed for every entity.
    */
   private getDeterministicNextPipelineAction(state: BrainTaskState): BrainActionDecision {
+    ensureStateCollections(state);
     const plan = state.plan;
     const qualifiedCandidates = state.verifiedEntities.filter((e) => e.status !== 'REJECTED');
     const fullyCompletedCount = this.countFullyCompletedEntities(state);
     const targetQuantity = plan.quantity;
 
     // Check 1: Do we need to dispatch emails for proposals that are ready?
+    // Attempt the send unless Gmail is known to be disconnected — the send tool
+    // reports honest success/failure, which resolves the entity's send state.
     const shouldDispatchEmail =
-      Boolean(state.gmailConnected) && Boolean(plan.emailActionsRequired || state.autoSendProposals);
+      state.gmailConnected !== false && Boolean(plan.emailActionsRequired || state.autoSendProposals);
     if (shouldDispatchEmail) {
       const candToSend = qualifiedCandidates.find((e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError);
       if (candToSend) {
@@ -1421,10 +1583,24 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     }
 
     // Check 3: Do we need to discover contact email/phone for qualified candidates?
-    if (plan.requestedFields.includes('email') || plan.emailActionsRequired) {
-      const candNeedingEmail = qualifiedCandidates.find((e) => (!e.email || e.email.trim() === ''));
-      if (candNeedingEmail) {
+    // Skip entities whose email search is already exhausted (emailStatus=NOT_FOUND)
+    // so we never loop endlessly on contact discovery.
+    if (plan.requestedFields?.includes('email') || plan.emailActionsRequired) {
+      for (const candNeedingEmail of qualifiedCandidates) {
+        if (candNeedingEmail.email && candNeedingEmail.email.trim() !== '') continue;
+        if (candNeedingEmail.emailStatus === 'NOT_FOUND') continue;
+
         const contactQuery = `"${candNeedingEmail.name}" ${candNeedingEmail.address || plan.location || ''} contact email phone`;
+        const alreadySearched = state.observations.some(
+          (o) => o.toolName === 'google_search' && typeof o.toolArgs?.query === 'string' && o.toolArgs.query === contactQuery
+        );
+        if (alreadySearched) {
+          // Contact search already attempted with no verified email — record
+          // honest NOT_FOUND instead of looping on the same query forever.
+          candNeedingEmail.emailStatus = 'NOT_FOUND';
+          continue;
+        }
+
         return {
           type: 'execute_tool',
           toolName: 'google_search',
@@ -1463,11 +1639,15 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
         `${base} ${location} directory`.trim(),
       ];
       const query = queryVariations[(state.currentIteration - 1) % queryVariations.length];
+      // SaaS/software/CRM/startup queries are web-native — always use
+      // google_search; OSM/local business providers (search_businesses)
+      // return local shops, not software companies.
+      const saasLike = isSaasLikeQuery(`${state.userPrompt} ${base}`);
       return {
         type: 'execute_tool',
-        toolName: state.currentIteration % 2 === 0 ? 'search_businesses' : 'google_search',
+        toolName: saasLike ? 'google_search' : (state.currentIteration % 2 === 0 ? 'search_businesses' : 'google_search'),
         toolArgs: {
-          query,
+          query: saasLike ? `${base} ${location} official website`.trim() : query,
           location,
           limit: Math.min(Math.max(targetQuantity, 10), 30),
         },
@@ -1480,7 +1660,7 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
       type: 'complete',
       toolName: '',
       toolArgs: {},
-      rationale: `Completed pipeline. Verified ${fullyCompletedCount}/${targetQuantity} items.`,
+      rationale: `Completed pipeline. Verified ${Math.min(fullyCompletedCount, targetQuantity)}/${targetQuantity} after page inspection.`,
       expectedObservation: 'Final response synthesis',
     };
   }

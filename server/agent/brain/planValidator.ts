@@ -484,6 +484,23 @@ export class PlanValidator {
       };
     }
 
+    // SaaS / software / startup discovery is always web-native: route to
+    // google_search with an "official website" query, never to local
+    // business (OSM/shop) providers.
+    const isSaasLike = /\b(saas|software|crm|erp|startups?|tech\s+compan(?:y|ies)|it\s+compan(?:y|ies)|app\s+develop\w*|web\s+develop\w*|api|cloud|fintech|edtech|healthtech)\b/i.test(lowerPrompt);
+    if (isSaasLike) {
+      const workGoal = parseWorkGoal(prompt, defaultLocation);
+      const baseQuery = (workGoal.searchQuery || prompt.slice(0, 100)).trim();
+      const query = /official website/i.test(baseQuery) ? baseQuery : `${baseQuery} official website`;
+      return {
+        type: 'execute_tool',
+        toolName: 'google_search',
+        toolArgs: { query, location: defaultLocation },
+        rationale: 'SaaS/software companies are discovered via web search for their official websites, not local shop registries',
+        expectedObservation: 'List of official company websites to inspect and verify',
+      };
+    }
+
     return {
       type: 'execute_tool',
       toolName: 'google_search',

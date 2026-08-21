@@ -813,7 +813,18 @@ export function generateDiscoveryQueryVariations(
 ): Array<{ query: string; purpose: string }> {
   const variations: Array<{ query: string; purpose: string }> = [];
 
-  if (isGeneric && locString) {
+  const isSaasLike =
+    /\b(saas|software|crm|erp|startups?|tech\s+compan(?:y|ies)|it\s+compan(?:y|ies)|app\s+develop\w*|web\s+develop\w*|api|cloud|fintech|edtech|healthtech)\b/i.test(query);
+
+  if (isSaasLike) {
+    const cleanSearchTerm = query.replace(/,.*$/, '').trim();
+    const base = locString ? `${cleanSearchTerm} in ${locString}` : cleanSearchTerm;
+    variations.push(
+      { query: base, purpose: 'primary_query' },
+      { query: `${base} official website`, purpose: 'official_website' },
+      { query: locString ? `top ${cleanSearchTerm} ${locString}` : `top ${cleanSearchTerm}`, purpose: 'top_variation' }
+    );
+  } else if (isGeneric && locString) {
     variations.push(
       { query: `small businesses in ${locString}`, purpose: 'small_businesses' },
       { query: `local services in ${locString}`, purpose: 'local_services' },
@@ -858,13 +869,22 @@ export async function discoverBusinessesViaWebResearch(
   let mergedCandidatesCount = 0;
   const rejections: Array<{ name: string; reason: string }> = [];
 
+  // SaaS / software / tech queries are web-native businesses: local-shop style
+  // discovery (OSM POIs, "shops in <city>" queries) is useless and misleading.
+  const isSaasLikeDiscoveryQuery =
+    /\b(saas|software|crm|erp|startups?|tech\s+compan(?:y|ies)|it\s+compan(?:y|ies)|app\s+develop\w*|web\s+develop\w*|api|cloud|fintech|edtech|healthtech)\b/i.test(query);
+
+  // Only treat a query as "generic local business" when it clearly asks for
+  // small/local businesses. Words like "companies", "stores", or "services"
+  // alone (e.g. "SaaS companies") must NOT trigger local-shop fallbacks.
   const isGeneric =
-    !query ||
-    query.toLowerCase().includes('small business') ||
-    query.toLowerCase().includes('local business') ||
-    query.toLowerCase().includes('stores') ||
-    query.toLowerCase().includes('services') ||
-    query.toLowerCase().includes('companies');
+    !isSaasLikeDiscoveryQuery &&
+    (!query ||
+      query.toLowerCase().includes('small business') ||
+      query.toLowerCase().includes('local business') ||
+      query.toLowerCase().includes('local shop') ||
+      query.toLowerCase().includes('local store') ||
+      query.toLowerCase().includes('local service'));
 
   // Generate multi-source discovery queries
   const queryVariations = generateDiscoveryQueryVariations(query, locString, isGeneric);
@@ -981,8 +1001,12 @@ export async function discoverBusinessesViaWebResearch(
 
   // ==========================================
   // SOURCE 1: OpenStreetMap / Nominatim Open Web POI Discovery
+  // Skipped entirely for SaaS/software/startup style queries — physical POI
+  // registries only contain shops, restaurants, and clinics, never SaaS firms.
   // ==========================================
-  try {
+  if (isSaasLikeDiscoveryQuery) {
+    console.log('[DISCOVERY] Skipping OpenStreetMap/Nominatim POI sources for SaaS/software-style query.');
+  } else try {
     const osmQueries = isGeneric && locString
       ? [
           `shop in ${locString}`,

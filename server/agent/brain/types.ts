@@ -101,6 +101,8 @@ export interface TrackedEntityState {
   proposalSubject?: string;
   emailSent?: boolean;
   emailSendError?: string;
+  /** True only after the entity's own website/page was actually opened and inspected. */
+  pageInspected?: boolean;
   status?:
     | 'DISCOVERED'
     | 'VERIFIED'

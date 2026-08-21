@@ -132,6 +132,50 @@ async function runLifecycleTests() {
   const completedCount = (brainDecisionEngine as any).countFullyCompletedEntities(mockTaskState);
   assert(completedCount === 1, 'Correctly identified only 1 entity as fully completed across all pipeline stages', `Got: ${completedCount}`);
 
+  // --- TEST 2B: Raw search hits (DISCOVERED, uninspected) are never counted as verified/completed ---
+  console.log('\n--- 2B. Uninspected DISCOVERED entities never count toward completion ---');
+  const discoveredOnlyState: any = {
+    plan: {
+      goal: 'Find 20 SaaS businesses in Delhi and extract decision maker emails',
+      quantity: 20,
+      noWebsiteRequired: false,
+      requestedFields: ['email'],
+      proposalRequired: false,
+      emailActionsRequired: false,
+      constraints: [],
+    },
+    verifiedEntities: Array.from({ length: 20 }, (_, i) => ({
+      id: `disc_${i}`,
+      name: `Search Hit ${i + 1}`,
+      url: `https://example-${i + 1}.com`,
+      hasWebsite: true,
+      status: 'DISCOVERED',
+      pageInspected: false,
+      email: null,
+    })),
+  };
+  const discoveredCompletedCount = (brainDecisionEngine as any).countFullyCompletedEntities(discoveredOnlyState);
+  assert(
+    discoveredCompletedCount === 0,
+    '20 DISCOVERED uninspected entities yield completedCount === 0 (search hits are NOT verified leads)',
+    `Got: ${discoveredCompletedCount}`
+  );
+
+  // Missing discoveredCandidates/visitedUrls/observations must not crash the pipeline router
+  let pipelineActionCrashed = false;
+  let discoveredNextAction: any = null;
+  try {
+    discoveredNextAction = (brainDecisionEngine as any).getDeterministicNextPipelineAction(discoveredOnlyState);
+  } catch {
+    pipelineActionCrashed = true;
+  }
+  assert(!pipelineActionCrashed, 'Pipeline router does not crash when discoveredCandidates/visitedUrls are missing');
+  assert(
+    discoveredNextAction && discoveredNextAction.type !== 'complete',
+    'Pipeline does not complete while 0/20 entities are actually verified',
+    `Got: ${discoveredNextAction?.type}`
+  );
+
   // Next action must be send_email for Beta Bakery
   const nextAction = (brainDecisionEngine as any).getDeterministicNextPipelineAction(mockTaskState);
   assert(nextAction.type === 'execute_tool', 'Next action is execute_tool');
