@@ -1,3 +1,6 @@
+ye dekho isme kul kitne error h:
+
+```
 /**
  * Universal Agent Brain Decision Engine
  *
@@ -1896,3 +1899,4 @@ Auto-send setting: ${state.autoSendProposals ? 'on' : 'off'}`;
 }
 
 export const brainDecisionEngine = new BrainDecisionEngine();
+```
