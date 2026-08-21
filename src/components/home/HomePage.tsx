@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
-/* DATA DEFINITIONS & COPY ACCURATE TO THE CLAUDE CODE STYLE SCREENSHOT       */
+/* DATA DEFINITIONS FOR SANMINE SPACE (RESEARCH, LEADS & PROPOSAL OUTREACH)   */
 /* -------------------------------------------------------------------------- */
 
 export interface AIModelInfo {
@@ -220,177 +220,174 @@ const renderModelIcon = (iconType: string) => {
 };
 
 const LOGO_PARTNERS = [
-  { name: 'NASA', logoText: 'NASA' },
-  { name: 'asana', logoText: 'asana' },
-  { name: 'Uber', logoText: 'Uber' },
-  { name: 'PagerDuty', logoText: 'PagerDuty' },
-  { name: 'Brex', logoText: 'BREX' }
+  { name: 'GrowthScale', logoText: 'GrowthScale' },
+  { name: 'ApexPipeline', logoText: 'ApexPipeline' },
+  { name: 'RevEngine', logoText: 'RevEngine' },
+  { name: 'OutreachHero', logoText: 'OutreachHero' },
+  { name: 'ScaleVentures', logoText: 'ScaleVentures' }
 ];
 
 const WHAT_YOU_CAN_DO_TABS = [
   {
-    id: 'onboarding',
-    label: 'Code & Research Onboarding',
-    terminalPrompt: '> I need to map this codebase and market research. Can you explain it to me?',
+    id: 'lead-discovery',
+    label: 'Autonomous Lead Discovery',
+    terminalPrompt: '> sanmine discover --industry="AI & SaaS" --geo="Austin, TX" --decision-makers=true',
     terminalOutput: [
-      '● Analyzing workspace structure and market intelligence vectors...',
-      '● Identified architecture: Full-stack agent runtime with ReAct decision engine.',
-      '  - Frontend: Vite + React 18 with stacked overlay sliding viewport',
-      '  - Backend: Node.js / Express with deterministic lifecycle state guards',
-      '  - Discovery: Multi-source web search & headless DOM inspection',
-      '  - Outreach: Restricted Google OAuth 2.0 (gmail.send only)',
-      '● Ready to triage tasks, build grounded proposals, and execute tool commands.'
+      '● Initializing autonomous lead discovery across multi-source business registries...',
+      '  ✓ Found Lead: CloudPulse AI (Austin, TX) — CEO: Sarah Jenkins [Verified]',
+      '  ✓ Found Lead: ApexFlow Automation (Austin, TX) — CTO: Michael Chang [Verified]',
+      '  ✓ Found Lead: DataKite Systems (Austin, TX) — VP Eng: Elena Rostova [Verified]',
+      '● Verified active domains, corporate email patterns & recent hiring expansion.',
+      '● Zero Hallucination Guarantee: 100% grounded with live web provenance.'
     ]
   },
   {
-    id: 'triage',
-    label: 'Triage Issues & Leads',
-    terminalPrompt: '> sanmine triage --domain="enterprise-saas" --leads=5',
+    id: 'live-browser',
+    label: 'Deep Web & Live Browser Inspection',
+    terminalPrompt: '> sanmine inspect --target="https://apexflow.io" --audit="tech-stack, security, speed"',
     terminalOutput: [
-      '● Connecting to multi-source business registries and live web domains...',
-      '  ✓ Lead 1: CloudPulse Analytics (Austin, TX) [Score: 96/100]',
-      '  ✓ Lead 2: ApexFlow Automation (San Francisco, CA) [Score: 94/100]',
-      '  ✓ Lead 3: DataKite Systems (Boston, MA) [Score: 91/100]',
-      '● Verifying active websites and validated corporate emails...',
-      '● Zero hallucination guarantee: 5/5 verified with live source quotes.'
+      '● Launching headless browser viewport with live DOM crawl & screenshot rendering...',
+      '● Extracted tech stack: Next.js 14, Tailwind CSS, Stripe Billing, Segment Analytics.',
+      '● Identified 3 high-impact conversion bottlenecks on primary checkout landing page.',
+      '● Formatted rich visual audit findings with source link citations.'
     ]
   },
   {
-    id: 'refactor',
-    label: 'Refactor & Edit Code',
-    terminalPrompt: '> sanmine edit --file="server/agent/brain/decisionEngine.ts" --optimize="checkpointing"',
+    id: 'proposal-outreach',
+    label: '5-Pillar Proposal & Gmail Outreach',
+    terminalPrompt: '> sanmine propose --lead="ApexFlow" --model="gemini-2.5-pro" --dispatch="gmail"',
     terminalOutput: [
-      '● Reading decisionEngine.ts (1,624 lines)...',
-      '● Applying deterministic checkpoint pre/post hooks to external tool dispatcher...',
-      '● Verified exact-once action execution integrity for email and search actions.',
-      '● Ran regression suite: 50 passed, 0 failed. Build 100% clean.'
+      '● Synthesizing tailored 5-pillar audit proposal with live citation proof...',
+      '● Drafted high-converting outreach email directly in Gmail.',
+      '● Restricted OAuth 2.0 permissions active (gmail.send only — zero inbox scanning).',
+      '✓ Proposal draft ready in Gmail for 1-click human verification and dispatch.'
     ]
   }
 ];
 
 const ANNOUNCEMENTS = [
   {
-    title: 'Dynamic workflows',
-    desc: 'Tackle the most challenging tasks by executing across 10s to 100s of parallel subagents, and checking its work before anything reaches you.',
-    date: 'May 28',
-    type: 'Blog'
+    title: 'Autonomous Live Browser Viewport',
+    desc: 'Real-time DOM inspection, tech-stack profiling, and screenshot capture of company landing pages directly within your agent session.',
+    date: 'Aug 2026',
+    type: 'Feature'
   },
   {
-    title: 'Agent view',
-    desc: 'One place to manage all your Sanmine Space sessions and background tasks.',
-    date: 'May 11',
-    type: 'Blog'
+    title: '5-Pillar Tailored Proposal Studio',
+    desc: 'Synthesize grounded, high-converting audit proposals with verifiable live citations and zero hallucination risk.',
+    date: 'Jul 2026',
+    type: 'Studio'
   },
   {
-    title: 'Routines',
-    desc: 'Configure a routine once, and it can run on a schedule, from an API call, or in response to an event.',
-    date: 'Apr 14',
-    type: 'Blog'
+    title: 'Zero-Inbox-Scanning Gmail Outreach',
+    desc: 'Dispatch client proposals directly through official Google OAuth with restricted gmail.send scope—total email privacy guaranteed.',
+    date: 'Jun 2026',
+    type: 'Integration'
   },
   {
-    title: 'Computer use & Web tools',
-    desc: 'Sanmine Space navigates the live web, crawls DOM elements, and inspects live websites to complete complex research.',
-    date: 'Mar 23',
-    type: 'Blog'
+    title: 'Multi-Model Intelligence Hub',
+    desc: 'Switch between OpenAI GPT-4o, Claude 3.7 Sonnet, Gemini 2.5 Flash, and DeepSeek R1 with seamless unified key management.',
+    date: 'May 2026',
+    type: 'AI Models'
   }
 ];
 
 const TESTIMONIALS = [
   {
-    company: 'ramp',
-    logo: 'ramp ↗',
+    company: 'RevEngine Group',
+    logo: 'RevEngine ↗',
     quote:
-      '"Sanmine Space has dramatically accelerated our team\'s operational efficiency. I can now write exploratory research, extract verifiable business contacts, and turn them into tailored proposals—pulling everything directly into our workflow."',
-    author: 'Anton Brylkov, Staff Software Engineer'
+      '"Sanmine Space has completely transformed our agency outreach. We find verified decision makers, audit their live website in seconds, and send tailored proposals with verified citations—our response rate jumped by 340%."',
+    author: 'Marcus Vance, Managing Director'
   },
   {
-    company: 'intercom',
-    logo: 'intercom',
+    company: 'Apex Growth',
+    logo: 'Apex Growth',
     quote:
-      '"With Sanmine Space, we\'re not just automating research—we\'re elevating it to truly human quality. This lets support and sales teams think more strategically about customer experience with zero hallucinations."',
-    author: 'Fergal Reid, VP of AI'
+      '"The zero-hallucination web research and direct Gmail integration give us total confidence. We never worry about fake emails or fabricated company facts. It is the most reliable agent runtime we have ever used."',
+    author: 'Sophia Sterling, Head of Business Development'
   },
   {
-    company: 'notion',
-    logo: 'N Notion',
+    company: 'ScaleVentures Lab',
+    logo: 'ScaleVentures',
     quote:
-      '"Sanmine Space is moving our team up a level: we decide what needs to happen, and smooth the process so it can build and verify end-to-end. A big part of my day is now orchestrating autonomous workflows with peace of mind."',
-    author: 'Simon Last, Co-Founder'
+      '"We replaced 4 different tools for prospecting, website audits, and cold email drafting with Sanmine Space. Having the live browser inspect pages and generate 5-pillar pitches in one view is phenomenal."',
+    author: 'David Chen, Co-Founder & Partner'
   }
 ];
 
 const INTEGRATION_LOGOS = [
-  { name: 'AWS', bg: 'bg-[#FF9900]/10', text: 'AWS' },
-  { name: 'New Relic', bg: 'bg-[#1CE783]/10', text: 'new relic' },
-  { name: 'Heroku', bg: 'bg-[#430098]/10', text: 'HEROKU' },
-  { name: 'Datadog', bg: 'bg-[#632CA6]/10', text: 'DATADOG' },
-  { name: 'MongoDB', bg: 'bg-[#13AA52]/10', text: 'MongoDB.' },
-  { name: 'Elastic', bg: 'bg-[#005571]/10', text: 'elastic' },
-  { name: 'Stripe', bg: 'bg-[#635BFF]/10', text: 'stripe' },
-  { name: 'Kubernetes', bg: 'bg-[#326CE5]/10', text: 'kubernetes' },
-  { name: 'Atlassian', bg: 'bg-[#0052CC]/10', text: 'ATLASSIAN' },
-  { name: 'Dynatrace', bg: 'bg-[#1496FF]/10', text: 'dynatrace' },
-  { name: 'GitHub', bg: 'bg-[#24292E]/10', text: 'GitHub' },
-  { name: 'Terraform', bg: 'bg-[#844FBA]/10', text: 'HashiCorp Terraform' }
+  { name: 'Gmail', bg: 'bg-[#EA4335]/10', text: 'Gmail OAuth' },
+  { name: 'Google Gemini', bg: 'bg-[#1B72E8]/10', text: 'Gemini 2.5' },
+  { name: 'OpenAI', bg: 'bg-[#10A37F]/10', text: 'OpenAI GPT-4o' },
+  { name: 'Anthropic', bg: 'bg-[#D97706]/10', text: 'Claude 3.7' },
+  { name: 'DeepSeek', bg: 'bg-[#2563EB]/10', text: 'DeepSeek R1' },
+  { name: 'OpenRouter', bg: 'bg-[#6366F1]/10', text: 'OpenRouter' },
+  { name: 'LinkedIn', bg: 'bg-[#0A66C2]/10', text: 'LinkedIn Search' },
+  { name: 'Headless Browser', bg: 'bg-[#000000]/10', text: 'Live Browser' },
+  { name: 'Slack', bg: 'bg-[#4A154B]/10', text: 'Slack Alerts' },
+  { name: 'HubSpot', bg: 'bg-[#FF7A59]/10', text: 'HubSpot CRM' },
+  { name: 'Stripe', bg: 'bg-[#635BFF]/10', text: 'Stripe' },
+  { name: 'Web Scraping', bg: 'bg-[#1496FF]/10', text: 'Web Engine' }
 ];
 
 const FAQS = [
   {
-    q: 'How do I get started with Sanmine Space?',
-    a: 'You can launch Sanmine Space directly in your browser with 1-click Google Sign-In or install the CLI tool using `curl -fsSL https://sanmine.space/install.sh | bash`. It connects directly to your authorized Google Workspace and agent runtime without complex configuration.'
+    q: 'How does Sanmine Space discover verified leads?',
+    a: 'Sanmine Space uses multi-source autonomous search agents that query live business registries, corporate domains, and verified contact indexes. It cross-references active website URLs, corporate domain MX records, and LinkedIn leadership profiles to deliver 100% verified leads.'
   },
   {
-    q: 'What kinds of tasks can Sanmine Space handle?',
-    a: 'Sanmine Space handles deep multi-domain web research, autonomous lead discovery with live website crawling, grounded proposal generation with 5-pillar persuasion architecture, and official Gmail outreach dispatch with explicit user approvals.'
+    q: 'How does Sanmine Space protect my Gmail privacy?',
+    a: 'We use official Google OAuth 2.0 strictly with the restricted `gmail.send` scope. Sanmine Space NEVER reads, stores, or scans your private inbox or received emails. Tokens are encrypted with enterprise AES-256-GCM.'
   },
   {
-    q: 'How does Sanmine Space work with my existing tools?',
-    a: 'Sanmine Space integrates smoothly with your terminal, browser, IDE (VS Code, JetBrains), and cloud environments. It connects with Gmail using official Google REST APIs with restricted `gmail.send` scope—never reading or scanning your private inbox.'
+    q: 'How does the Live Browser prevent AI hallucinations?',
+    a: 'Rather than guessing company details, Sanmine Space opens live headless browser sessions to inspect real DOM elements, tech stack signatures, and current pricing. Every generated pitch is backed by verified source link citations.'
   },
   {
-    q: 'Is Sanmine Space secure and compliant?',
-    a: 'Yes. Sanmine Space strictly enforces Zero Inbox Scanning, stores OAuth tokens encrypted with AES-256-GCM, and adheres to Google API Services User Data Policies. All web research is grounded to exact citations with zero hallucination.'
+    q: 'What is the 5-Pillar Proposal Studio?',
+    a: 'Our built-in proposal engine structures outreach into 5 proven persuasion pillars: Executive Summary, Observed Website Audit, Tailored Solution Blueprint, Measurable Business ROI, and Frictionless Call to Action.'
   },
   {
-    q: 'What are the system requirements to run Sanmine Space?',
-    a: 'Sanmine Space works on macOS, Linux, and Windows (via WSL or PowerShell). For browser-based workflows, any modern browser is fully supported.'
+    q: 'Can I use my own API keys (OpenAI, Claude, Gemini, DeepSeek)?',
+    a: 'Yes! Sanmine Space features a Unified API Gateway. You can use your own custom API keys or leverage our managed high-speed inference endpoints with instant model switching.'
   },
   {
-    q: 'How much does Sanmine Space cost?',
-    a: 'Sanmine Space offers a flexible Pro tier starting at $17/month for individual builders, with Max 5x ($100/month) and Max 20x ($200/month) plans for high-frequency power users and enterprise teams.'
+    q: 'Can I review email proposals before they are sent?',
+    a: 'Always. Sanmine Space enforces human-in-the-loop oversight: you can view the full proposal text, edit email drafts, and trigger 1-click dispatch directly to your recipient.'
   }
 ];
 
 const TECHNICAL_DOCS = [
   {
-    title: 'Sanmine Space documentation',
-    tag: 'Developer docs',
-    desc: 'Explore the comprehensive CLI and API reference guides for autonomous agent workflows.'
+    title: 'Sanmine Space ReAct agent architecture',
+    tag: 'Agent Engine',
+    desc: 'Explore deterministic state guards, step-by-step reasoning loops, and structured tool calling lifecycles.'
   },
   {
-    title: 'Common workflows',
-    tag: 'Developer docs',
-    desc: 'Step-by-step blueprints for multi-lead research, website inspection, and customized proposal pipelines.'
+    title: 'Autonomous live browser & DOM scraping',
+    tag: 'Web Research',
+    desc: 'How our headless viewport inspects client websites, identifies tech stacks, and captures visual evidence.'
   },
   {
-    title: 'Using SANMINE.md files',
-    tag: 'Blog',
-    desc: 'Define workspace-level instructions, project rules, and persistent persona memories for your agent.'
+    title: '5-Pillar proposal engineering guide',
+    tag: 'Proposal Studio',
+    desc: 'Master the conversion architecture that turns technical website audits into high-converting client proposals.'
   },
   {
-    title: 'Introduction to agentic reasoning',
-    tag: 'Blog',
-    desc: 'Learn how our deterministic ReAct loops evaluate observations and prevent hallucinated facts.'
+    title: 'Google OAuth 2.0 & zero-inbox-reading policy',
+    tag: 'Security & Privacy',
+    desc: 'Technical breakdown of our restricted gmail.send authorization, AES-256-GCM tokens, and compliance.'
   },
   {
-    title: 'How teams use Sanmine Space',
-    tag: 'Blog',
-    desc: 'Case studies on scaling personalized outbound campaigns with 100% citation provenance.'
+    title: 'Multi-model orchestration & key routing',
+    tag: 'AI Models',
+    desc: 'Configure and hot-swap OpenAI, Gemini, Claude, DeepSeek, and OpenRouter models in your workspace.'
   },
   {
-    title: 'Fix workflows faster with agent checkpoints',
-    tag: 'Blog',
-    desc: 'Deep dive into exactly-once action execution and rollback safety in AI-assisted development.'
+    title: 'Automated lead discovery routines',
+    tag: 'Automation',
+    desc: 'Schedule background agent routines to find qualified prospective leads and draft pitches on autopilot.'
   }
 ];
 
@@ -400,8 +397,8 @@ const SECTIONS_METADATA = [
   { id: 'announcements', title: 'Feature Announcements' },
   { id: 'capabilities', title: 'What You Can Do' },
   { id: 'where-you-work', title: 'Meets You Where You Work' },
-  { id: 'testimonials', title: 'What Developers Are Saying' },
-  { id: 'integrations', title: 'Command Line Integrations' },
+  { id: 'testimonials', title: 'What Growth Teams Say' },
+  { id: 'integrations', title: 'Ecosystem & Integrations' },
   { id: 'faq', title: 'FAQ' },
   { id: 'rundown', title: 'Technical Rundown' },
   { id: 'footer-cta', title: 'Get Started' }
@@ -573,30 +570,49 @@ export const HomePage: React.FC = () => {
           </div>
 
           {/* Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-5 text-[#4D4B46] font-medium">
-            <div className="flex items-center gap-1 hover:text-[#1F1E1B] cursor-pointer">
-              <span>Meet Agent</span>
-              <ChevronDown className="w-3 h-3 text-[#9C988F]" />
-            </div>
-            <div className="flex items-center gap-1 hover:text-[#1F1E1B] cursor-pointer">
-              <span>Platform</span>
-              <ChevronDown className="w-3 h-3 text-[#9C988F]" />
-            </div>
-            <div className="flex items-center gap-1 hover:text-[#1F1E1B] cursor-pointer">
-              <span>Solutions</span>
-              <ChevronDown className="w-3 h-3 text-[#9C988F]" />
-            </div>
+          <nav className="hidden lg:flex items-center gap-6 text-[#4D4B46] font-medium text-xs">
+            <button
+              type="button"
+              onClick={() => goToSection(0)}
+              className="hover:text-[#1F1E1B] transition-colors cursor-pointer"
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => goToSection(3)}
+              className="hover:text-[#1F1E1B] transition-colors cursor-pointer"
+            >
+              Capabilities
+            </button>
             <button
               type="button"
               onClick={() => goToSection(1)}
-              className="hover:text-[#1F1E1B] cursor-pointer"
+              className="hover:text-[#1F1E1B] transition-colors cursor-pointer"
             >
               Pricing
             </button>
-            <div className="flex items-center gap-1 hover:text-[#1F1E1B] cursor-pointer">
-              <span>Resources</span>
-              <ChevronDown className="w-3 h-3 text-[#9C988F]" />
-            </div>
+            <button
+              type="button"
+              onClick={() => goToSection(6)}
+              className="hover:text-[#1F1E1B] transition-colors cursor-pointer"
+            >
+              Integrations
+            </button>
+            <button
+              type="button"
+              onClick={() => goToSection(7)}
+              className="hover:text-[#1F1E1B] transition-colors cursor-pointer"
+            >
+              FAQ
+            </button>
+            <button
+              type="button"
+              onClick={() => goToSection(8)}
+              className="hover:text-[#1F1E1B] transition-colors cursor-pointer"
+            >
+              Docs
+            </button>
           </nav>
 
           {/* Right Action Buttons */}
@@ -609,13 +625,6 @@ export const HomePage: React.FC = () => {
               Login
             </button>
             <button
-              type="button"
-              onClick={() => setShowAuthModal(true)}
-              className="text-[#4D4B46] hover:text-[#1F1E1B] font-medium hidden md:inline-block cursor-pointer transition-colors"
-            >
-              Contact sales
-            </button>
-            <button
               id="header-btn-try-sanmine"
               type="button"
               onClick={() => setShowAuthModal(true)}
@@ -624,19 +633,6 @@ export const HomePage: React.FC = () => {
               Try Sanmine Space
             </button>
           </div>
-        </div>
-
-        {/* Secondary Sub-bar */}
-        <div className="border-t border-[#EAE6DF] bg-[#F7F6F2]/80 px-4 sm:px-6 lg:px-8 py-1 flex items-center justify-between text-[11px] text-[#6B6862]">
-          <span className="font-semibold text-[#1F1E1B]">Sanmine Space</span>
-          <button
-            type="button"
-            onClick={() => goToSection(1)}
-            className="flex items-center gap-1 hover:text-[#1F1E1B] cursor-pointer font-medium"
-          >
-            <span>Explore here</span>
-            <ArrowRight className="w-3 h-3 text-[#D25234]" />
-          </button>
         </div>
       </header>
 
@@ -690,18 +686,18 @@ export const HomePage: React.FC = () => {
             opacity: activeSection > 0 ? 0.7 : 1,
             transition: 'transform 600ms cubic-bezier(0.16, 1, 0.3, 1), opacity 600ms ease'
           }}
-          className="absolute inset-0 w-full h-full bg-[#F7F6F2] pt-20 pb-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center overflow-y-auto"
+          className="absolute inset-0 w-full h-full bg-[#F7F6F2] pt-20 sm:pt-24 pb-16 px-4 sm:px-6 lg:px-8 overflow-y-auto scroll-smooth"
         >
-          <div className="max-w-6xl w-full mx-auto space-y-6">
+          <div className="max-w-6xl w-full mx-auto space-y-10 my-auto">
             {/* Top Grid: Hero Heading & Interactive Preview */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center pt-2">
               {/* Left Column: Editorial Headline & CTAs */}
               <div className="lg:col-span-5 space-y-4 text-left">
                 <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-normal tracking-tight text-[#1F1E1B] leading-[1.08]">
                   Sanmine Space
                 </h1>
                 <p className="text-sm sm:text-base text-[#5C5952] leading-relaxed max-w-md">
-                  Work with Sanmine Space directly in your workflow. Research, verify, synthesize proposals, and coordinate outreach from your terminal, IDE, and web browser.
+                  Autonomous AI Agent runtime for deep web research, verified lead discovery, 5-pillar proposal synthesis, and direct Gmail outreach.
                 </p>
 
                 {/* Primary CTA Buttons */}
@@ -713,24 +709,25 @@ export const HomePage: React.FC = () => {
                       className="inline-flex items-center gap-2 bg-[#141413] hover:bg-[#2A2825] text-[#FFFFFF] text-xs font-semibold px-4 py-2.5 rounded-lg transition-all shadow-xs cursor-pointer"
                     >
                       <DownloadIcon className="w-3.5 h-3.5" />
-                      <span>Get Sanmine Space</span>
+                      <span>Launch Sanmine Space</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => goToSection(8)}
+                      onClick={() => goToSection(3)}
                       className="inline-flex items-center gap-1.5 text-xs text-[#5C5952] hover:text-[#1F1E1B] px-3 py-2 rounded-lg hover:bg-[#EAE6DF]/60 transition-colors cursor-pointer"
                     >
-                      <span>Read documentation</span>
+                      <span>Explore capabilities</span>
                       <ExternalLink className="w-3 h-3 text-[#9C988F]" />
                     </button>
                   </div>
-                  <div className="text-[11px] text-[#9C988F]">
-                    Available for macOS, Linux, and Windows.
+                  <div className="text-[11px] text-[#9C988F] flex items-center gap-1.5 pt-0.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#3F7A5A]" />
+                    <span>Zero Hallucinations • Restricted Gmail Permissions • Multi-Model AI</span>
                   </div>
                 </div>
               </div>
 
-              {/* Right Column: Sleek Claude Code Style Interface Mockup */}
+              {/* Right Column: Sleek Claude Code Style Interface Mockup for Sanmine Space */}
               <div className="lg:col-span-7">
                 <div className="w-full bg-[#FFFFFF] rounded-2xl border border-[#E5E2DC] shadow-[0_12px_36px_rgba(0,0,0,0.06)] overflow-hidden text-xs">
                   {/* Window Bar */}
@@ -740,11 +737,14 @@ export const HomePage: React.FC = () => {
                       <span className="w-2.5 h-2.5 rounded-full bg-[#5FB878]" />
                       <span className="w-2.5 h-2.5 rounded-full bg-[#D25234]" />
                       <span className="ml-2 font-mono text-[11px] text-[#6B6862]">
-                        sanmine-agent / fix-the-double-charge-bug.ts
+                        sanmine-agent / b2b-lead-prospecting-austin.run
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-[#9C988F]">
-                      <span className="text-[#3F7A5A] font-semibold">● Agent Active</span>
+                      <span className="text-[#3F7A5A] font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#3F7A5A] animate-pulse" />
+                        Agent Active
+                      </span>
                     </div>
                   </div>
 
@@ -753,42 +753,45 @@ export const HomePage: React.FC = () => {
                     {/* Left Mini Sidebar */}
                     <div className="col-span-4 bg-[#FAF9F5] border-r border-[#E5E2DC] p-3 space-y-3 font-mono text-[11px]">
                       <div className="text-[10px] uppercase font-bold text-[#9C988F] tracking-wider">
-                        Sessions
+                        Active Tasks
                       </div>
                       <div className="space-y-1 text-[#5C5952]">
-                        <div className="p-1.5 rounded bg-[#EAE6DF] text-[#1F1E1B] font-semibold">
-                          + New session
+                        <div className="p-1.5 rounded bg-[#EAE6DF] text-[#1F1E1B] font-semibold text-[10px]">
+                          + Lead Discovery
                         </div>
-                        <div className="p-1 rounded hover:bg-[#EAE6DF]/50 flex items-center gap-1">
-                          <span>⚡ Routines</span>
+                        <div className="p-1 rounded hover:bg-[#EAE6DF]/50 flex items-center gap-1 text-[10px]">
+                          <span>🌐 Live Browser</span>
                         </div>
-                        <div className="p-1 rounded hover:bg-[#EAE6DF]/50 flex items-center gap-1">
-                          <span>⚙ Customize</span>
+                        <div className="p-1 rounded hover:bg-[#EAE6DF]/50 flex items-center gap-1 text-[10px]">
+                          <span>📄 Proposal Studio</span>
+                        </div>
+                        <div className="p-1 rounded hover:bg-[#EAE6DF]/50 flex items-center gap-1 text-[10px]">
+                          <span>✉ Gmail Outreach</span>
                         </div>
                       </div>
                       <div className="text-[10px] uppercase font-bold text-[#9C988F] tracking-wider pt-2">
-                        Scheduled
+                        Target Geo
                       </div>
                       <div className="text-[11px] text-[#6B6862]">
-                        Weekly dependency audit
+                        Austin, TX (SaaS)
                       </div>
                     </div>
 
                     {/* Right Workspace Preview */}
                     <div className="col-span-8 p-4 space-y-3 font-sans text-xs bg-[#FFFFFF]">
                       <div className="p-2.5 rounded-lg bg-[#F0F7FF] border border-[#D0E5FF] text-[#1E40AF] text-[11px] leading-relaxed">
-                        <strong>We're seeing duplicate charges when customers double-click the pay button. Can you find and fix it?</strong>
+                        <strong>Find high-growth SaaS companies in Austin, inspect their website tech stack, and synthesize customized 5-pillar proposals for CEO outreach.</strong>
                       </div>
                       <div className="text-[11px] text-[#5C5952] space-y-1.5 font-mono">
-                        <div>Read 3 files, searched the checkout flow →</div>
+                        <div className="text-[#3F7A5A]">✓ 5 Verified Decision Makers identified across live registries</div>
                         <div className="p-2 rounded bg-[#FAF9F5] border border-[#E5E2DC] text-[10px] text-[#1F1E1B] leading-normal">
-                          <span className="text-[#D25234] font-semibold">Plan:</span> Reproduce the double submit against a test charge front cause. <code className="bg-[#EAE6DF] px-1 rounded">createCharge()</code> generates a new idempotency key per call instead of per checkout session.
+                          <span className="text-[#D25234] font-semibold">Live Audit:</span> <code className="bg-[#EAE6DF] px-1 rounded">apexflow.io</code> → Next.js 14, Stripe Billing, Segment. Identified 3 high-impact checkout bottlenecks. 100% citation verified.
                         </div>
                       </div>
                       <div className="pt-2 flex items-center justify-between border-t border-[#E5E2DC] text-[11px]">
-                        <span className="text-[#9C988F]">Describe a task or ask a question</span>
+                        <span className="text-[#9C988F] font-mono text-[10px]">Ready for Gmail 1-Click Dispatch</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-mono bg-[#FAF9F5] border border-[#E5E2DC] px-1.5 py-0.5 rounded text-[#5C5952]">Auto</span>
+                          <span className="text-[10px] font-mono bg-[#FAF9F5] border border-[#E5E2DC] px-1.5 py-0.5 rounded text-[#5C5952]">Gemini 2.5</span>
                           <button
                             type="button"
                             onClick={() => setShowAuthModal(true)}
@@ -804,34 +807,34 @@ export const HomePage: React.FC = () => {
               </div>
             </div>
 
-            {/* AI Models Multi-Provider Horizontal Marquee (Height: 500px) - "Trusted By & Connectivity" Sub-section */}
+            {/* AI Models Multi-Provider Horizontal Marquee - "Trusted By & Connectivity" Sub-section */}
             <div
               id="ai-models-marquee-section"
-              className="w-full h-[500px] min-h-[480px] max-h-[500px] flex flex-col justify-center items-center bg-transparent border-0 shadow-none overflow-hidden relative my-4 select-none"
+              className="w-full flex flex-col justify-center items-center bg-transparent border-0 shadow-none overflow-hidden relative py-8 sm:py-12 my-4 select-none"
             >
               {/* Sub-section Header */}
-              <div className="text-center mb-14 sm:mb-16">
-                <span className="text-sm sm:text-base md:text-lg uppercase tracking-[0.3em] font-bold text-[#8C887B]">
+              <div className="text-center mb-8 sm:mb-10">
+                <span className="text-xs sm:text-sm md:text-base uppercase tracking-[0.25em] font-bold text-[#8C887B]">
                   Trusted By & Connectivity
                 </span>
               </div>
 
               {/* Left & Right Gradient masks for smooth continuous fade */}
-              <div className="absolute left-0 top-0 bottom-0 w-24 sm:w-44 bg-gradient-to-r from-[#F7F6F2] to-transparent z-20 pointer-events-none" />
-              <div className="absolute right-0 top-0 bottom-0 w-24 sm:w-44 bg-gradient-to-l from-[#F7F6F2] to-transparent z-20 pointer-events-none" />
+              <div className="absolute left-0 top-0 bottom-0 w-20 sm:w-36 bg-gradient-to-r from-[#F7F6F2] to-transparent z-20 pointer-events-none" />
+              <div className="absolute right-0 top-0 bottom-0 w-20 sm:w-36 bg-gradient-to-l from-[#F7F6F2] to-transparent z-20 pointer-events-none" />
 
               {/* Single Large Row Horizontal Marquee Showcase (Real Official Logo & Name, No Cards/Borders/Subtitles) */}
-              <div className="overflow-hidden w-full py-4">
-                <div className="animate-marquee gap-16 sm:gap-24 md:gap-32 items-center">
+              <div className="overflow-hidden w-full py-2">
+                <div className="animate-marquee gap-14 sm:gap-20 md:gap-24 items-center">
                   {[...AI_MODELS_LIST, ...AI_MODELS_LIST].map((model, idx) => (
                     <div
                       key={`${model.name}-marquee-${idx}`}
-                      className="flex items-center gap-5 sm:gap-7 bg-transparent border-0 shadow-none p-0 cursor-pointer group shrink-0 transition-transform duration-200 hover:scale-105"
+                      className="flex items-center gap-4 sm:gap-5 bg-transparent border-0 shadow-none p-0 cursor-pointer group shrink-0 transition-transform duration-200 hover:scale-105"
                     >
                       <div className="flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200">
                         {renderModelIcon(model.iconType)}
                       </div>
-                      <span className="text-2xl sm:text-3xl md:text-4xl font-semibold text-[#1F1E1B] tracking-tight group-hover:text-[#D25234] transition-colors whitespace-nowrap font-serif sm:font-sans">
+                      <span className="text-xl sm:text-2xl md:text-3xl font-semibold text-[#1F1E1B] tracking-tight group-hover:text-[#D25234] transition-colors whitespace-nowrap font-serif sm:font-sans">
                         {model.name}
                       </span>
                     </div>
@@ -908,21 +911,21 @@ export const HomePage: React.FC = () => {
                   <div className="w-8 h-8 rounded-full bg-[#F7F6F2] flex items-center justify-center text-[#1F1E1B]">
                     <Sparkles className="w-4 h-4" />
                   </div>
-                  <h3 className="text-lg font-bold text-[#1F1E1B]">Pro</h3>
+                  <h3 className="text-lg font-bold text-[#1F1E1B]">Pro Builder</h3>
                   <p className="text-xs text-[#6B6862] leading-relaxed">
-                    Sanmine Space is included in your Pro plan. Perfect for short coding sprints in small codebases.
+                    100 verified lead discoveries/mo, live browser DOM audits, 5-pillar proposal studio, and multi-model access (Gemini 2.5, GPT-4o, Claude 3.7).
                   </p>
                 </div>
                 <div className="space-y-3 pt-4 border-t border-[#E5E2DC]">
                   <div className="text-2xl font-bold text-[#1F1E1B]">
-                    $17 <span className="text-xs font-normal text-[#9C988F]">/ month</span>
+                    $19 <span className="text-xs font-normal text-[#9C988F]">/ month</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowAuthModal(true)}
                     className="w-full py-2.5 rounded-lg bg-[#141413] hover:bg-[#2A2825] text-[#FFFFFF] text-xs font-semibold transition-colors cursor-pointer"
                   >
-                    Try Sanmine Space
+                    Get Started with Pro
                   </button>
                 </div>
               </div>
@@ -930,27 +933,27 @@ export const HomePage: React.FC = () => {
               {/* Card 2: Max 5x */}
               <div className="p-6 rounded-2xl bg-[#FFFFFF] border border-[#D25234]/40 space-y-4 shadow-sm flex flex-col justify-between relative">
                 <div className="absolute -top-2.5 right-4 bg-[#D25234] text-[#FFFFFF] text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  POPULAR
+                  MOST POPULAR
                 </div>
                 <div className="space-y-3">
                   <div className="w-8 h-8 rounded-full bg-[#D25234]/10 text-[#D25234] flex items-center justify-center">
                     <Zap className="w-4 h-4" />
                   </div>
-                  <h3 className="text-lg font-bold text-[#1F1E1B]">Max 5x</h3>
+                  <h3 className="text-lg font-bold text-[#1F1E1B]">Growth Max 5x</h3>
                   <p className="text-xs text-[#6B6862] leading-relaxed">
-                    Sanmine Space is included in your Max plan. Great value for everyday use in larger codebases.
+                    500 verified lead discoveries/mo, unlimited live web crawls, 1-click Gmail outreach dispatch, custom personas, and priority inference.
                   </p>
                 </div>
                 <div className="space-y-3 pt-4 border-t border-[#E5E2DC]">
                   <div className="text-2xl font-bold text-[#1F1E1B]">
-                    $100 <span className="text-xs font-normal text-[#9C988F]">/ month</span>
+                    $79 <span className="text-xs font-normal text-[#9C988F]">/ month</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowAuthModal(true)}
                     className="w-full py-2.5 rounded-lg bg-[#141413] hover:bg-[#2A2825] text-[#FFFFFF] text-xs font-semibold transition-colors cursor-pointer"
                   >
-                    Try Sanmine Space
+                    Get Growth Max 5x
                   </button>
                 </div>
               </div>
@@ -961,28 +964,28 @@ export const HomePage: React.FC = () => {
                   <div className="w-8 h-8 rounded-full bg-[#F7F6F2] flex items-center justify-center text-[#1F1E1B]">
                     <Layers className="w-4 h-4" />
                   </div>
-                  <h3 className="text-lg font-bold text-[#1F1E1B]">Max 20x</h3>
+                  <h3 className="text-lg font-bold text-[#1F1E1B]">Agency Max 20x</h3>
                   <p className="text-xs text-[#6B6862] leading-relaxed">
-                    Even more Sanmine Space included in your Max plan. Great value for power users with the most access.
+                    2,500 lead discoveries/mo, multi-agent parallel swarms, team workspaces, shared campaigns, webhook automation, and dedicated API gateway.
                   </p>
                 </div>
                 <div className="space-y-3 pt-4 border-t border-[#E5E2DC]">
                   <div className="text-2xl font-bold text-[#1F1E1B]">
-                    $200 <span className="text-xs font-normal text-[#9C988F]">/ month</span>
+                    $199 <span className="text-xs font-normal text-[#9C988F]">/ month</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowAuthModal(true)}
                     className="w-full py-2.5 rounded-lg bg-[#141413] hover:bg-[#2A2825] text-[#FFFFFF] text-xs font-semibold transition-colors cursor-pointer"
                   >
-                    Try Sanmine Space
+                    Get Agency Max 20x
                   </button>
                 </div>
               </div>
             </div>
 
             <div className="text-center text-[10px] text-[#9C988F]">
-              Usage limits apply. Prices shown don't include applicable tax. Enterprise contracts available on request.
+              Usage limits apply. Prices shown don't include applicable tax. Enterprise contracts & custom high-volume quotas available on request.
             </div>
           </div>
         </section>
@@ -1127,21 +1130,21 @@ export const HomePage: React.FC = () => {
               {/* Right Feature Explanation Bullets */}
               <div className="lg:col-span-5 space-y-4 text-left">
                 <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-[#1F1E1B]">Code & System Onboarding</h3>
+                  <h3 className="text-sm font-bold text-[#1F1E1B]">Autonomous Lead Discovery</h3>
                   <p className="text-xs text-[#6B6862] leading-relaxed">
-                    Sanmine Space maps and explains entire codebases in a few seconds. It uses agentic search to understand project structure without manually selecting context files.
+                    Search multi-source business registries, LinkedIn leadership directories, and live domain indexes in seconds. Target by industry, revenue, tech stack, and decision-maker roles with 100% verified emails.
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-[#1F1E1B]">Turn Intent into Executions</h3>
+                  <h3 className="text-sm font-bold text-[#1F1E1B]">Deep Live Web & DOM Inspection</h3>
                   <p className="text-xs text-[#6B6862] leading-relaxed">
-                    Stop bouncing between tools. Sanmine Space integrates with your terminal to handle the entire workflow—reading issues, writing code, running tests, and submitting PRs.
+                    Deploy headless browser instances that crawl prospective client websites in real-time. Uncover tech stacks, conversion bottlenecks, speed scores, and page elements with zero hallucination.
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-[#1F1E1B]">Make Powerful Edits</h3>
+                  <h3 className="text-sm font-bold text-[#1F1E1B]">5-Pillar Proposals & Gmail Dispatch</h3>
                   <p className="text-xs text-[#6B6862] leading-relaxed">
-                    Sanmine Space's understanding of dependencies enables it to make powerful, multi-file edits that work.
+                    Generate tailored conversion-engineered audit proposals backed by citation proof. Review and dispatch via official Google OAuth with restricted zero-inbox-reading permissions.
                   </p>
                 </div>
               </div>
@@ -1168,62 +1171,66 @@ export const HomePage: React.FC = () => {
                 <CodeIcon className="w-5 h-5" />
               </div>
               <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-[#1F1E1B]">
-                Meets you where you code & work
+                Meets you where your business operates
               </h2>
             </div>
 
             {/* 3 Environment Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {/* Card 1: Terminal */}
+              {/* Card 1: Web Workspace */}
               <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#E5E2DC] space-y-3 shadow-xs">
-                <div className="h-36 rounded-xl bg-[#141413] text-[#D5D2CA] p-3 font-mono text-[10px] space-y-1 overflow-hidden">
-                  <div className="text-[#D25234]">$ Welcome to Sanmine Space!</div>
-                  <div className="text-[#5FB878]">● Read 12 candidate leads...</div>
-                  <div className="text-[#9C988F]">● Grounded 5 proposals</div>
-                  <div className="text-[#FFFFFF]">✓ Execution completed</div>
-                </div>
-                <h3 className="text-sm font-bold text-[#1F1E1B]">Start in your terminal</h3>
-                <p className="text-xs text-[#6B6862] leading-relaxed">
-                  Super powerful terminal integration. Works with all your CLI tools alongside any IDE.
-                </p>
-                <div className="pt-2 border-t border-[#E5E2DC] text-[10px] font-mono text-[#D25234]">
-                  curl -fsSL https://sanmine.space/install.sh
-                </div>
-              </div>
-
-              {/* Card 2: IDE Integration */}
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#E5E2DC] space-y-3 shadow-xs">
-                <div className="h-36 rounded-xl bg-[#23272E] text-[#ABB2BF] p-3 font-mono text-[10px] space-y-1 overflow-hidden border border-[#383C44]">
-                  <div className="text-[#61AFEF]">// Sanmine Space for VS Code</div>
-                  <div>Can you add tests for this file?</div>
-                  <div className="text-[#98C379]">✓ decisionEngine.test.ts</div>
-                  <div className="text-[#E5C07B]">50/50 test assertions passed</div>
-                </div>
-                <h3 className="text-sm font-bold text-[#1F1E1B]">Integrate with your editor</h3>
-                <p className="text-xs text-[#6B6862] leading-relaxed">
-                  Native extensions for VS Code (+ Cursor, Devin Desktop) and JetBrains IDEs.
-                </p>
-                <div className="pt-2 border-t border-[#E5E2DC] flex items-center gap-2 text-[10px] text-[#6B6862]">
-                  <span className="bg-[#FAF9F5] px-2 py-0.5 rounded border border-[#E5E2DC]">VS Code</span>
-                  <span className="bg-[#FAF9F5] px-2 py-0.5 rounded border border-[#E5E2DC]">JetBrains</span>
-                </div>
-              </div>
-
-              {/* Card 3: Browser & Web App */}
-              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#E5E2DC] space-y-3 shadow-xs">
-                <div className="h-36 rounded-xl bg-[#FAF9F5] text-[#1F1E1B] p-3 font-sans text-[10px] space-y-1 overflow-hidden border border-[#E5E2DC]">
+                <div className="h-36 rounded-xl bg-[#FAF9F5] text-[#1F1E1B] p-3 font-sans text-[10px] space-y-1.5 overflow-hidden border border-[#E5E2DC]">
                   <div className="font-bold flex items-center justify-between">
-                    <span>Sanmine Space Web</span>
-                    <span className="text-[#5FB878]">● Live</span>
+                    <span>Agent Workspace</span>
+                    <span className="text-[#3F7A5A] font-mono">● Active</span>
                   </div>
                   <div className="p-1.5 rounded bg-[#FFFFFF] border border-[#E5E2DC] text-[9px] text-[#6B6862]">
-                    Session: #outreach-march-2026
+                    Query: "Fintech CTOs in London"
                   </div>
-                  <div className="text-[9px] text-[#3F7A5A]">5 Proposals Dispatched via Gmail</div>
+                  <div className="text-[9px] text-[#2563EB]">12 Leads Grounded • 5 Live Browser Audits</div>
                 </div>
-                <h3 className="text-sm font-bold text-[#1F1E1B]">Access anywhere</h3>
+                <h3 className="text-sm font-bold text-[#1F1E1B]">Web Agent Dashboard</h3>
                 <p className="text-xs text-[#6B6862] leading-relaxed">
-                  Quick access from browser, mobile app, or Sanmine Space desktop for parallel work on the go.
+                  Real-time interactive session control with split-screen browser audits, model picker, and instant proposal review.
+                </p>
+                <div className="pt-2 border-t border-[#E5E2DC] text-[10px] font-mono text-[#D25234]">
+                  Sanmine Space Web Runtime
+                </div>
+              </div>
+
+              {/* Card 2: Gmail Outreach */}
+              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#E5E2DC] space-y-3 shadow-xs">
+                <div className="h-36 rounded-xl bg-[#EA4335]/5 text-[#1F1E1B] p-3 font-sans text-[10px] space-y-1.5 overflow-hidden border border-[#EA4335]/20">
+                  <div className="font-bold text-[#EA4335] flex items-center justify-between">
+                    <span>Google OAuth 2.0</span>
+                    <span className="text-[#3F7A5A]">● Restricted</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-[#FFFFFF] border border-[#E5E2DC] text-[9px] text-[#6B6862]">
+                    Scope: `gmail.send` (Drafts & 1-Click Send)
+                  </div>
+                  <div className="text-[9px] text-[#3F7A5A]">✓ Zero Inbox Scanning Enforced</div>
+                </div>
+                <h3 className="text-sm font-bold text-[#1F1E1B]">Direct Gmail Integration</h3>
+                <p className="text-xs text-[#6B6862] leading-relaxed">
+                  Dispatch client proposals directly from your authorized work email with 1-click human verification.
+                </p>
+                <div className="pt-2 border-t border-[#E5E2DC] flex items-center gap-2 text-[10px] text-[#6B6862]">
+                  <span className="bg-[#FAF9F5] px-2 py-0.5 rounded border border-[#E5E2DC]">Gmail</span>
+                  <span className="bg-[#FAF9F5] px-2 py-0.5 rounded border border-[#E5E2DC]">Google Workspace</span>
+                </div>
+              </div>
+
+              {/* Card 3: CLI & Automated Routines */}
+              <div className="p-5 rounded-2xl bg-[#FFFFFF] border border-[#E5E2DC] space-y-3 shadow-xs">
+                <div className="h-36 rounded-xl bg-[#141413] text-[#D5D2CA] p-3 font-mono text-[10px] space-y-1 overflow-hidden">
+                  <div className="text-[#D25234]">$ sanmine routines --daily</div>
+                  <div className="text-[#5FB878]">● Running scheduled lead discovery...</div>
+                  <div className="text-[#9C988F]">● 10 proposals prepared in drafts</div>
+                  <div className="text-[#FFFFFF]">✓ Pipeline refreshed</div>
+                </div>
+                <h3 className="text-sm font-bold text-[#1F1E1B]">Autonomous Routines & CLI</h3>
+                <p className="text-xs text-[#6B6862] leading-relaxed">
+                  Schedule background agents that search qualified leads and prepare personalized pitches every morning automatically.
                 </p>
                 <div className="pt-2 border-t border-[#E5E2DC] flex items-center gap-2 text-[10px]">
                   <button
@@ -1231,7 +1238,7 @@ export const HomePage: React.FC = () => {
                     onClick={() => setShowAuthModal(true)}
                     className="text-[#D25234] font-semibold hover:underline cursor-pointer"
                   >
-                    Open in browser →
+                    Open in workspace →
                   </button>
                 </div>
               </div>
@@ -1240,23 +1247,16 @@ export const HomePage: React.FC = () => {
             {/* Bottom Callout Banner */}
             <div className="p-4 rounded-2xl bg-[#FFFFFF] border border-[#E5E2DC] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-2xs">
               <div className="flex items-center gap-3">
-                <MessageSquare className="w-5 h-5 text-[#D25234]" />
-                <span className="font-medium text-[#1F1E1B]">Kick off autonomous agent tasks directly in Slack or Gmail</span>
+                <ShieldCheck className="w-5 h-5 text-[#3F7A5A]" />
+                <span className="font-medium text-[#1F1E1B]">Connect Google Workspace in seconds with 100% encrypted OAuth 2.0 tokens</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAuthModal(true)}
-                  className="bg-[#FAF9F5] hover:bg-[#EAE6DF] text-[#1F1E1B] px-3 py-1.5 rounded-lg border border-[#E5E2DC] font-medium cursor-pointer"
+                  className="bg-[#141413] text-[#FFFFFF] px-3.5 py-1.5 rounded-lg font-medium cursor-pointer"
                 >
-                  Add to Slack
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAuthModal(true)}
-                  className="bg-[#141413] text-[#FFFFFF] px-3 py-1.5 rounded-lg font-medium cursor-pointer"
-                >
-                  Learn more
+                  Connect Google
                 </button>
               </div>
             </div>
@@ -1278,7 +1278,7 @@ export const HomePage: React.FC = () => {
           <div className="max-w-4xl w-full mx-auto space-y-6">
             <div className="text-center space-y-2">
               <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-[#1F1E1B]">
-                What developers are saying
+                What growth leaders & agencies say
               </h2>
             </div>
 
@@ -1307,7 +1307,7 @@ export const HomePage: React.FC = () => {
         </section>
 
         {/* ----------------------------------------------------------- */}
-        {/* SECTION 6: COMMAND LINE TOOLS INTEGRATIONS                  */}
+        {/* SECTION 6: ECOSYSTEM & INTEGRATIONS                         */}
         {/* ----------------------------------------------------------- */}
         <section
           id="section-integrations"
@@ -1334,10 +1334,10 @@ export const HomePage: React.FC = () => {
             {/* Right Explanation Text */}
             <div className="lg:col-span-6 space-y-4 text-left">
               <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-[#1F1E1B]">
-                Connects with your favorite command line tools
+                Powered by foundation models & enterprise integrations
               </h2>
               <p className="text-xs sm:text-sm text-[#6B6862] leading-relaxed">
-                Your terminal is where real work happens. Sanmine Space connects with the tools that power development—deployment, databases, monitoring, version control. Rather than adding another interface to juggle, it enhances your existing stack.
+                Sanmine Space orchestrates the world's most capable AI models (OpenAI GPT-4o, Anthropic Claude 3.7, Google Gemini 2.5, DeepSeek R1) alongside live web search, headless browser execution, and official Google Workspace APIs.
               </p>
               <div className="pt-2">
                 <button
@@ -1470,10 +1470,10 @@ export const HomePage: React.FC = () => {
               {/* Left Column */}
               <div className="lg:col-span-7 space-y-4">
                 <h2 className="font-serif text-3xl sm:text-4xl font-normal text-[#FFFFFF] leading-tight">
-                  Create what's exciting.<br />Maintain what's essential.
+                  Automate lead prospecting.<br />Deliver high-converting proposals.
                 </h2>
                 <p className="text-xs text-[#9C988F]">
-                  Use Sanmine Space where you work.
+                  Supercharge your pipeline with Sanmine Space.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <button
@@ -1529,66 +1529,140 @@ export const HomePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Bottom Footer Directory Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-6 text-[11px] text-[#9C988F]">
-              <div className="space-y-2">
-                <div className="font-bold text-[#FFFFFF] text-xs">Products</div>
-                <div className="space-y-1">
-                  <div>Sanmine Space</div>
-                  <div>Agent Runtime</div>
-                  <div>Lead Discovery</div>
-                  <div>Proposal Studio</div>
-                  <div>Gmail Outreach</div>
+            {/* Bottom Footer Directory Grid - Only Real Working Links and Pages */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-8 text-[11px] text-[#9C988F] pt-4">
+              {/* Column 1: Core Platform */}
+              <div className="space-y-3">
+                <div className="font-bold text-[#FFFFFF] text-xs uppercase tracking-wider">Features</div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Agent Runtime
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Lead Discovery
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Proposal Studio
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Gmail Outreach
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthModal(true)}
+                    className="block text-left text-[#D25234] hover:text-[#FFFFFF] font-semibold transition-colors cursor-pointer"
+                  >
+                    Launch Space ↗
+                  </button>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="font-bold text-[#FFFFFF] text-xs">Solutions</div>
-                <div className="space-y-1">
-                  <div>B2B Research</div>
-                  <div>Code Refactoring</div>
-                  <div>Automated Triage</div>
-                  <div>Enterprise AI</div>
+              {/* Column 2: Navigation Sections */}
+              <div className="space-y-3">
+                <div className="font-bold text-[#FFFFFF] text-xs uppercase tracking-wider">Explore</div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => goToSection(0)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Overview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSection(1)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Pricing & Plans
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSection(2)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Announcements
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSection(3)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    What You Can Do
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSection(6)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    CLI & Integrations
+                  </button>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="font-bold text-[#FFFFFF] text-xs">Resources</div>
-                <div className="space-y-1">
-                  <div>Documentation</div>
-                  <div>API Reference</div>
-                  <div>Changelog</div>
-                  <div>Community</div>
+              {/* Column 3: Resources & Real Pages */}
+              <div className="space-y-3">
+                <div className="font-bold text-[#FFFFFF] text-xs uppercase tracking-wider">Resources & Legal</div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => goToSection(8)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    Technical Docs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSection(7)}
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors cursor-pointer"
+                  >
+                    FAQ
+                  </button>
+                  <a
+                    href="/privacy"
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors"
+                  >
+                    Privacy Policy
+                  </a>
+                  <a
+                    href="/terms"
+                    className="block text-left text-[#9C988F] hover:text-[#FFFFFF] transition-colors"
+                  >
+                    Terms of Service
+                  </a>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="font-bold text-[#FFFFFF] text-xs">Company</div>
-                <div className="space-y-1">
-                  <div>About Sanmine Space</div>
-                  <div>Research Lab</div>
-                  <div>Security</div>
-                  <div>Careers</div>
+              {/* Column 4: Brand & Compliance */}
+              <div className="space-y-3">
+                <div className="font-bold text-[#FFFFFF] text-xs uppercase tracking-wider">Sanmine Space</div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-serif text-[#FFFFFF]">
+                    <Sparkles className="w-4 h-4 text-[#D25234]" />
+                    <span className="font-bold">Sanmine Space</span>
+                  </div>
+                  <p className="text-[11px] text-[#9C988F] leading-relaxed">
+                    Zero-hallucination agent runtime for deep research, tailored proposal synthesis, and verified outreach.
+                  </p>
+                  <p className="text-[10px] text-[#6B6862] pt-2">
+                    © {new Date().getFullYear()} Sanmine Space. All rights reserved.
+                  </p>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="font-bold text-[#FFFFFF] text-xs">Legal & Privacy</div>
-                <div className="space-y-1">
-                  <div>Privacy Policy</div>
-                  <div>Terms of Service</div>
-                  <div>Google API Disclosure</div>
-                  <div>Zero Hallucination</div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="font-bold text-[#FFFFFF] text-xs">Brand</div>
-                <div className="flex items-center gap-2 text-xs font-serif text-[#FFFFFF]">
-                  <Sparkles className="w-4 h-4 text-[#D25234]" />
-                  <span>Sanmine Space</span>
-                </div>
-                <p className="text-[10px] text-[#6B6862]">© {new Date().getFullYear()} Sanmine Space. All rights reserved.</p>
               </div>
             </div>
           </div>
