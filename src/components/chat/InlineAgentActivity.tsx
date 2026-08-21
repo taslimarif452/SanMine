@@ -8,11 +8,6 @@ import {
   ChevronDown,
   ChevronUp,
   Square,
-  Globe,
-  Compass,
-  Search,
-  Scan,
-  Mail,
 } from 'lucide-react';
 import { ActivityStep } from '../../types';
 import { useAgent } from '../../context/AgentContext';
@@ -79,7 +74,7 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
     return (
       <div
         id="inline-agent-activity-collapsed"
-        className="w-full bg-[#FFFFFF] border border-[#E5E2DC] rounded-xl p-3 shadow-2xs transition-all duration-150"
+        className="w-full py-1.5 transition-all duration-150"
       >
         <button
           type="button"
@@ -89,22 +84,14 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
           <div className="flex items-center gap-2.5 min-w-0">
             {isCompleted ? (
               isUnavailable ? (
-                <div className="w-5 h-5 rounded-full bg-[#FDF2E9] flex items-center justify-center text-[#C66A3D] shrink-0">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                </div>
+                <AlertCircle className="w-4 h-4 text-[#C66A3D] shrink-0" />
               ) : (
-                <div className="w-5 h-5 rounded-full bg-[#EBF3ED] flex items-center justify-center text-[#3F7A5A] shrink-0">
-                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                </div>
+                <Check className="w-4 h-4 text-[#3F7A5A] stroke-[2.5] shrink-0" />
               )
             ) : isStopped ? (
-              <div className="w-5 h-5 rounded-full bg-[#FDF2E9] flex items-center justify-center text-[#C66A3D] shrink-0">
-                <AlertCircle className="w-3.5 h-3.5" />
-              </div>
+              <AlertCircle className="w-4 h-4 text-[#C66A3D] shrink-0" />
             ) : (
-              <div className="w-5 h-5 rounded-full bg-[#FEF2F2] flex items-center justify-center text-[#DC2626] shrink-0">
-                <X className="w-3.5 h-3.5 stroke-[2.5]" />
-              </div>
+              <X className="w-4 h-4 text-[#DC2626] stroke-[2.5] shrink-0" />
             )}
             <span className="text-xs font-medium text-[#1F1E1B] truncate">
               {displaySummary}
@@ -124,10 +111,10 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
   return (
     <div
       id="inline-agent-activity-expanded"
-      className="w-full bg-[#FFFFFF] border border-[#E5E2DC] rounded-xl p-4 shadow-2xs space-y-3.5 transition-all duration-200"
+      className="w-full py-1.5 space-y-3.5 transition-all duration-200"
     >
       {/* Activity Header */}
-      <div className="flex items-center justify-between pb-2.5 border-b border-[#F2F1ED]">
+      <div className="flex items-center justify-between pb-1">
         <div className="flex items-center gap-2">
           {isRunning ? (
             <>
@@ -139,13 +126,9 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
           ) : isCompleted ? (
             <>
               {isUnavailable ? (
-                <div className="w-4 h-4 rounded-full bg-[#FDF2E9] flex items-center justify-center text-[#C66A3D]">
-                  <AlertCircle className="w-3 h-3 text-[#C66A3D]" />
-                </div>
+                <AlertCircle className="w-3.5 h-3.5 text-[#C66A3D] shrink-0" />
               ) : (
-                <div className="w-4 h-4 rounded-full bg-[#EBF3ED] flex items-center justify-center text-[#3F7A5A]">
-                  <Check className="w-3 h-3 stroke-[2.5]" />
-                </div>
+                <Check className="w-3.5 h-3.5 text-[#3F7A5A] stroke-[2.5] shrink-0" />
               )}
               <span className="text-xs font-semibold text-[#1F1E1B]">
                 {displaySummary}
@@ -153,18 +136,14 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
             </>
           ) : isStopped ? (
             <>
-              <div className="w-4 h-4 rounded-full bg-[#FDF2E9] flex items-center justify-center text-[#C66A3D]">
-                <AlertCircle className="w-3 h-3 text-[#C66A3D]" />
-              </div>
+              <AlertCircle className="w-3.5 h-3.5 text-[#C66A3D] shrink-0" />
               <span className="text-xs font-semibold text-[#1F1E1B]">
                 {displaySummary}
               </span>
             </>
           ) : (
             <>
-              <div className="w-4 h-4 rounded-full bg-[#FEF2F2] flex items-center justify-center text-[#DC2626]">
-                <X className="w-3 h-3 stroke-[2.5] text-[#DC2626]" />
-              </div>
+              <X className="w-3.5 h-3.5 stroke-[2.5] text-[#DC2626] shrink-0" />
               <span className="text-xs font-semibold text-[#1F1E1B]">
                 {displaySummary}
               </span>
@@ -201,7 +180,7 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
       {isRateLimitedPersonalization && (
         <div
           id="notice-rate-limited-personalization"
-          className="rounded-lg bg-[#FAF7F2] border border-[#EBDCCF] px-3.5 py-2.5 text-xs text-[#6E4B2E] flex items-start gap-2.5"
+          className="text-xs text-[#6E4B2E] flex items-start gap-2.5"
         >
           <AlertCircle className="w-4 h-4 text-[#C66A3D] shrink-0 mt-0.5" />
           <div className="leading-relaxed font-normal">
@@ -245,7 +224,7 @@ export const InlineAgentActivity: React.FC<InlineAgentActivityProps> = ({
                 >
                   <span>{step.title}</span>
                   {step.title.toLowerCase().includes('live browser') && (
-                    <span className="text-[9px] font-mono font-semibold px-1 py-0.2 rounded bg-[#FAF6F2] text-[#C66A3D] border border-[#C66A3D]/30">
+                    <span className="text-[9px] font-mono font-semibold text-[#C66A3D]">
                       LIVE BROWSER
                     </span>
                   )}

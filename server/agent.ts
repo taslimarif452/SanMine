@@ -774,6 +774,31 @@ export async function orchestrateAgentTask({
   const taskId = userRequestId || `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
   const promptText = lastUserMsg?.content || '';
+  let terminalEventSent = false;
+
+  const emitEvent = (event: any) => {
+    // Completion decisions do not have a tool name. Never forward malformed
+    // empty tool events to the client activity feed.
+    if (
+      typeof event?.type === 'string' &&
+      event.type.startsWith('tool.') &&
+      (typeof event.tool !== 'string' || !event.tool.trim())
+    ) {
+      console.warn(`[AGENT EVENT] Skipping empty tool event: ${event.type}`);
+      return;
+    }
+
+    if (
+      event?.type === 'task.completed' ||
+      event?.type === 'task.failed' ||
+      event?.type === 'task.stopped' ||
+      event?.type === 'error'
+    ) {
+      terminalEventSent = true;
+    }
+
+    sendEvent(event);
+  };
 
   const cleanConversationHistory = messages
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
@@ -797,9 +822,17 @@ export async function orchestrateAgentTask({
       messages: cleanConversationHistory,
       temperature,
       maxTokens,
-      sendEvent,
+      sendEvent: emitEvent,
       abortSignal,
     });
+
+    if (!terminalEventSent && !abortSignal?.aborted) {
+      emitEvent({
+        type: 'task.completed',
+        taskId,
+        message: 'Response completed',
+      });
+    }
     return;
   }
 
@@ -834,13 +867,13 @@ export async function orchestrateAgentTask({
       : m
   );
 
-  sendEvent({
+  emitEvent({
     type: 'task.started',
     taskId,
     prompt: agentObjective,
     message: 'Understanding your request...',
   });
-  sendEvent({
+  emitEvent({
     type: 'task.plan_created',
     title: 'Intent',
     message: describeWorkPlanForUser(agentObjective, { location: defaultLocation }),
@@ -860,13 +893,13 @@ export async function orchestrateAgentTask({
       autoSendProposals: effectiveAutoSend,
       temperature,
       maxTokens,
-      sendEvent,
+      sendEvent: emitEvent,
       abortSignal,
     });
 
     if (result?.finalAnswer) {
-      sendEvent({ type: 'message.delta', content: result.finalAnswer });
-      sendEvent({ type: 'message.completed', content: result.finalAnswer });
+      emitEvent({ type: 'message.delta', content: result.finalAnswer });
+      emitEvent({ type: 'message.completed', content: result.finalAnswer });
     }
   } catch (brainErr: any) {
     console.warn('[Universal Agent Brain Notice] Executing via task planner fallback:', brainErr.message);
@@ -882,8 +915,16 @@ export async function orchestrateAgentTask({
       autoSendProposals,
       temperature,
       maxTokens,
-      sendEvent,
+      sendEvent: emitEvent,
       abortSignal,
+    });
+  }
+
+  if (!terminalEventSent && !abortSignal?.aborted) {
+    emitEvent({
+      type: 'task.completed',
+      taskId,
+      message: 'Task completed',
     });
   }
 }
@@ -1081,8 +1122,6 @@ export async function oldOrchestrateAgentTask({
       return;
     }
 
-    const activeSearch = searchRegistry.getActiveProvider();
-
     // Active Search Provider is configured - Execute real search (0 AI calls)
     const displayCategory = isIndustryUnspecified ? 'small businesses' : businessType;
     const queryCategory = isIndustryUnspecified ? 'small businesses, local services & stores' : businessType;
@@ -1130,7 +1169,7 @@ export async function oldOrchestrateAgentTask({
       stepId: 'step_search_businesses',
       title: 'Searching businesses',
       message: `Searching for ${displayCategory} in ${targetLocation}...`,
-      detail: `Provider: ${activeSearch.name} · Live Browser session active`,
+      detail: 'Live Browser session active',
     });
 
     let searchResult: any;
@@ -1270,7 +1309,7 @@ export async function oldOrchestrateAgentTask({
       stepId: 'step_search_businesses',
       title: 'Searching businesses',
       message: `Found ${businesses.length} verified businesses in ${displayLoc}`,
-      detail: `Verified ${businesses.length} local ${displayCategory} in ${displayLoc} via ${activeSearch.name}`,
+      detail: `Verified ${businesses.length} local ${displayCategory} in ${displayLoc}`,
     });
 
     const enrichedLeads: any[] = [];
