@@ -245,7 +245,7 @@ export const ChatWorkspace: React.FC = () => {
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={2}
-                placeholder="Delegate work — find companies, inspect sites, send proposals — or just talk..."
+                placeholder="Ask SanMine to research, find leads, analyze data, create proposals, send emails, or complete a task..."
                 className="w-full bg-transparent text-[#1F1E1B] placeholder-[#9C988F] text-sm md:text-[15px] resize-none focus:outline-none leading-relaxed px-1"
               />
 
