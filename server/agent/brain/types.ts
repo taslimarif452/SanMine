@@ -274,6 +274,21 @@ export interface BrainTaskState {
   remainingQuantity?: number;
   autoSendProposals?: boolean;
   gmailConnected?: boolean;
+  /**
+   * Set to true when the engine paused after preparing proposals/emails and asked
+   * the user whether to send them. The task waits for an explicit confirmation.
+   */
+  awaitingEmailConfirmation?: boolean;
+  /**
+   * Set to true once the user explicitly confirmed sending the prepared emails
+   * (auto-send off path). Emails are only dispatched when this is true (or auto-send on).
+   */
+  emailConfirmationGranted?: boolean;
+  /**
+   * Set to true when the user explicitly declined to send the prepared emails,
+   * so the engine stops asking and completes without dispatching.
+   */
+  emailConfirmationDeclined?: boolean;
 }
 
 export interface UniversalBrainRunOptions {

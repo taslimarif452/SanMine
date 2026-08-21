@@ -14,7 +14,7 @@ import { runAutonomousAgentLoop } from './agent/autonomousBrain.js';
 import { universalTaskPlanner } from './taskPlanner/planner.js';
 import { universalAgentBrain } from './agent/brain/index.js';
 import { resolveExecutionMode, isLeadingSlashCommand, stripLeadingSlash } from './agent/modeRouter.js';
-import { describeWorkPlanForUser } from './agent/workIntent.js';
+import { classifyUserIntent, describeWorkPlanForUser } from './agent/workIntent.js';
 import { executeNormalChat } from './chat/normalChat.js';
 import {
   processBatchProposalPipeline,
@@ -805,8 +805,23 @@ export async function orchestrateAgentTask({
 
   // 2. AGENT MODE: Full Autonomous Execution with Universal Task Planner & Agent Brain
   const agentObjective = route.normalizedPrompt;
+
+  // Determine effective auto-send: explicit option wins, otherwise fall back to the
+  // user's stored outreach preference (getUserPreferences).
+  let effectiveAutoSend = autoSendProposals;
+  if (typeof effectiveAutoSend !== 'boolean' && userId) {
+    try {
+      const userPrefs = await getUserPreferences(userId);
+      effectiveAutoSend = Boolean(userPrefs?.autoSendProposals);
+    } catch (prefErr: any) {
+      console.warn('[Neon DB] User preference lookup error:', prefErr.message);
+      effectiveAutoSend = false;
+    }
+  }
+  if (typeof effectiveAutoSend !== 'boolean') effectiveAutoSend = false;
+
   console.log(
-    `[AGENT MODE ACTIVATED]\ntaskId=${taskId}\nuserRequestId=${userRequestId || taskId}\nobjective="${agentObjective}"\nisSlashCommand=${route.isExplicitSlashCommand}\nisContinuation=${route.isAgentContinuation}`
+    `[AGENT MODE ACTIVATED]\ntaskId=${taskId}\nuserRequestId=${userRequestId || taskId}\nobjective="${agentObjective}"\nisSlashCommand=${route.isExplicitSlashCommand}\nisContinuation=${route.isAgentContinuation}\nuserIntent=${classifyUserIntent(agentObjective)}\neffectiveAutoSend=${effectiveAutoSend}`
   );
 
   const agentMessages = messages.map((m) =>
@@ -842,7 +857,7 @@ export async function orchestrateAgentTask({
       prompt: agentObjective,
       conversationHistory: historyWithNormalizedPrompt,
       defaultLocation,
-      autoSendProposals,
+      autoSendProposals: effectiveAutoSend,
       temperature,
       maxTokens,
       sendEvent,

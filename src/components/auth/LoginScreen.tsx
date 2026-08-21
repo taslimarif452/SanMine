@@ -15,19 +15,21 @@ export const LoginScreen: React.FC = () => {
       {/* Background subtle geometric accents */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[360px] bg-gradient-to-b from-[#EAE6DF]/60 to-transparent blur-3xl pointer-events-none -z-10" />
       <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-[#E8DCCF]/40 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute -top-20 -right-20 w-80 h-80 bg-[#C66A3D]/5 rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="absolute -top-20 -right-20 w-80 h-80 bg-[#D25234]/5 rounded-full blur-3xl pointer-events-none -z-10" />
 
       {/* Main Login Card */}
       <div className="w-full max-w-md bg-[#FFFFFF] border border-[#E5E2DC] rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] space-y-6 relative">
         
         {/* Header Branding */}
         <div className="text-center space-y-3 flex flex-col items-center">
-          <img
-            src="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787146942/ChatGPT_Image_Aug_19_2026_07_00_19_PM_jpzwzg.png"
-            alt="SanMine Space Logo"
-            className="w-12 h-12 object-contain rounded-xl shadow-xs"
-            referrerPolicy="no-referrer"
-          />
+          <div className="w-12 h-12 rounded-xl bg-[#1F1E1B] border border-[#383632] flex items-center justify-center shadow-xs">
+            <img
+              src="https://res.cloudinary.com/dbqmhnahl/image/upload/v1787146942/ChatGPT_Image_Aug_19_2026_07_00_19_PM_jpzwzg.png"
+              alt="SanMine Space Logo"
+              className="w-7 h-7 object-contain rounded-md"
+              referrerPolicy="no-referrer"
+            />
+          </div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#1F1E1B]">
             Welcome to SanMine Space
           </h1>
@@ -57,13 +59,13 @@ export const LoginScreen: React.FC = () => {
             onClick={handleGoogleSignIn}
             disabled={isAuthenticating}
             className={`w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl text-sm font-medium border border-[#E5E2DC] bg-[#FFFFFF] hover:bg-[#FAF9F5] active:bg-[#F2F1ED] text-[#1F1E1B] transition-all duration-150 shadow-2xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
-              isAuthenticating ? 'ring-2 ring-[#C66A3D]/30' : 'hover:border-[#D5D2CC]'
+              isAuthenticating ? 'ring-2 ring-[#D25234]/30' : 'hover:border-[#D5D2CC]'
             }`}
           >
             {isAuthenticating ? (
               <div className="flex items-center gap-2">
                 <svg
-                  className="animate-spin h-4 w-4 text-[#C66A3D]"
+                  className="animate-spin h-4 w-4 text-[#D25234]"
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"
                   viewBox="0 0 24 24"

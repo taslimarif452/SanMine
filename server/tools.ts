@@ -556,9 +556,19 @@ const generateProposalTool: AgentTool = {
   },
   execute: async (input, emitEvent) => {
     const businessName = input?.businessName || 'Prospective Client';
-    const websiteUrl = input?.websiteUrl || 'Pending Setup';
+    const websiteUrlRaw = (input?.websiteUrl || '').trim();
+    const weaknessRaw = (input?.identifiedWeaknesses || input?.weakness || '').trim();
+    const businessType = input?.businessType || 'Business';
+    const location = input?.location || 'India';
     const targetService = input?.targetService || 'Website Modernization & Search Visibility Overhaul';
-    const weaknesses = input?.identifiedWeaknesses || 'Mobile responsiveness, page load latency, and local SEO structure';
+
+    // Distinguish a business that has a live site from one that does not.
+    const noSiteIndicators = [
+      !websiteUrlRaw,
+      /pending setup|none|no website|n\/a|no online/i.test(websiteUrlRaw),
+      /no website|no online|no website presence|has no website|without a website/i.test(weaknessRaw),
+    ];
+    const hasLiveSite = !noSiteIndicators.some(Boolean);
 
     emitEvent?.({
       type: 'tool.started',
@@ -566,23 +576,24 @@ const generateProposalTool: AgentTool = {
       message: `Generating proposal for ${businessName}...`,
     });
 
-    const proposalMarkdown = `### Strategic Website & Growth Proposal for ${businessName}
+    const proposalMarkdown = hasLiveSite
+      ? `### Strategic Website & Growth Proposal for ${businessName}
 
 **Prepared for:** ${businessName}  
-**Current Website:** ${websiteUrl}  
+**Current Website:** ${websiteUrlRaw}  
 **Primary Focus:** ${targetService}
 
 ---
 
 #### 1. Executive Summary
-During a technical audit of ${businessName}'s digital footprint, we identified high-impact opportunities to dramatically improve conversion rates, mobile user experience, and search engine discoverability.
+During a technical audit of ${businessName}'s current website, we identified high-impact opportunities to dramatically improve conversion rates, mobile user experience, and search engine discoverability.
 
 #### 2. Key Diagnostic Findings
-- **Identified Deficiencies:** ${weaknesses}
+- **Existing Site Deficiencies:** ${weaknessRaw || 'Mobile responsiveness, page load latency, and local SEO structure'}
 - **Impact on Customer Acquisition:** Modern search algorithms prioritize fast, mobile-first websites. Addressing these points directly increases incoming phone calls and booking conversions.
 
 #### 3. Recommended Scope of Work
-1. **Responsive Mobile-First Architecture:** Fluid layout scaling flawlessly across smartphones, tablets, and desktops.
+1. **Responsive Mobile-First Refactor:** Rebuild the existing layout to scale flawlessly across smartphones, tablets, and desktops.
 2. **Speed & Core Web Vitals Optimization:** Sub-1 second initial content render time for zero drop-off.
 3. **Local SEO & Schema Markup:** Direct Google Maps & local ranking enhancements to outrank competitors.
 4. **Conversion Call-to-Actions:** Prominent click-to-call, WhatsApp, and booking buttons.
@@ -593,7 +604,36 @@ During a technical audit of ${businessName}'s digital footprint, we identified h
 - **QA, SEO Audit & Launch:** Days 8–10
 
 ---
-*Ready to review? We can deploy a staging preview tailored specifically for ${businessName}.*`;
+*Ready to review? We can deploy a staging preview tailored specifically for ${businessName}.*`
+      : `### Website & Growth Proposal for ${businessName}
+
+**Prepared for:** ${businessName}  
+**Current Website:** None found  
+**Primary Focus:** Establishing a modern online presence
+
+---
+
+#### 1. Executive Summary
+${businessName} currently has no active website, which means potential customers in ${location} searching online cannot find you, compare you, or contact you. This proposal outlines how we will build a modern, mobile-first website from the ground up so you capture local search demand.
+
+#### 2. Why This Matters Now
+- **Missing Online Presence:** ${businessName} has no discoverable website, so it is invisible on Google, Google Maps, and local directories.
+- **Missed Customer Demand:** Nearby customers actively searching for this service have no way to reach you digitally.
+- **Competitive Gap:** Competitors with even a basic site outrank businesses with no site at all.
+
+#### 3. Recommended Scope of Work
+1. **Brand New Responsive Website:** A clean, fast, mobile-first site built from scratch, tailored to ${businessType || businessName}.
+2. **Google Business Profile & Local SEO:** Set up local listing, schema markup, and directory citations so you appear on Google Maps.
+3. **Lead-Gen Landing Design:** Prominent click-to-call, WhatsApp, and booking buttons that turn visitors into customers.
+4. **Launch & Training:** Staging preview, QA, and a simple content handover so you can keep it updated.
+
+#### 4. Implementation Timeline
+- **Discovery & Wireframing:** Days 1–3
+- **Design & Development:** Days 4–9
+- **Launch & Local SEO Setup:** Days 10–12
+
+---
+*Ready to give ${businessName} a website that brings in customers? We can start with a staging preview right away.*`;
 
     emitEvent?.({
       type: 'tool.completed',
@@ -605,6 +645,7 @@ During a technical audit of ${businessName}'s digital footprint, we identified h
       success: true,
       businessName,
       targetService,
+      hasLiveSite,
       proposalMarkdown,
     };
   },
@@ -990,6 +1031,22 @@ export const sendEmailTool: AgentTool = {
           ? 'Gmail is not connected. Connect Gmail (OAuth or SMTP) in Settings to send proposals.'
           : res.error || 'Failed to dispatch email via connected mail provider.'
       );
+    }
+
+    // Never claim a send without a real provider messageId. A "successful" provider
+    // response that lacks a messageId is treated as a failed dispatch.
+    if (!res.messageId) {
+      if (userId && userId !== 'anonymous') {
+        await logOutreachAttempt({
+          userId,
+          recipientEmail: to,
+          businessName,
+          subject,
+          status: 'failed',
+          errorMessage: 'Provider reported success but returned no message ID.',
+        });
+      }
+      throw new Error('Provider reported success but returned no message ID. Email not confirmed as sent.');
     }
 
     if (userId && userId !== 'anonymous') {

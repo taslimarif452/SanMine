@@ -10,7 +10,7 @@
  * - In-message slashes ("/api", "https://...") do not trigger Agent Mode.
  */
 
-import { isWorkDelegationTask } from './workIntent.js';
+import { isWorkDelegationTask, isAffirmativeSendConfirmation, isNegativeConfirmation } from './workIntent.js';
 
 export type ExecutionMode = 'normal_chat' | 'agent';
 
@@ -117,6 +117,18 @@ function isContinuationOfActiveAgentTask(
   }
 
   const assistantContent = lastAssistantMsg.content.trim().toLowerCase();
+
+  // If the assistant asked whether to send the prepared proposals/emails from Gmail,
+  // a bare "yes" / "bhej do" (or a decline) is an agent continuation, not casual chat.
+  const askedForSendConfirmation =
+    /(do you want me to send|send them from your connected gmail|want me to send|shall i send|should i send|send the emails|send these emails|send these proposals|send the proposals|confirm the send)/i.test(
+      assistantContent
+    );
+  if (askedForSendConfirmation) {
+    if (isAffirmativeSendConfirmation(trimmedPrompt) || isNegativeConfirmation(trimmedPrompt)) {
+      return true;
+    }
+  }
 
   // Check if the assistant explicitly asked for specific clarification or input to proceed
   const clarificationPatterns = [

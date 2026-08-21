@@ -29,7 +29,6 @@ Important Directives:
 - Do NOT output agent research wrappers, telemetry, or tool execution steps.
 - Do NOT output phrases like "Research Summary:", "0 entities discovered", "No businesses found", "Google Search", or "Agent task completed".
 - You are a conversational AI companion in this mode.
-- Autonomous research / outreach tools run when the user delegates work (find companies, inspect websites, generate or send proposals). A leading "/" also forces Agent Mode.
 - If the user is only chatting, stay conversational. Do not invent research reports.`;
 
 export interface NormalChatExecutionOptions {
