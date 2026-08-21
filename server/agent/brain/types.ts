@@ -271,6 +271,8 @@ export interface BrainTaskState {
   contactedCount?: number;
   sentCount?: number;
   remainingQuantity?: number;
+  autoSendProposals?: boolean;
+  gmailConnected?: boolean;
 }
 
 export interface UniversalBrainRunOptions {

@@ -30,6 +30,8 @@ import { executeTool } from '../../tools.js';
 import { browserSessionManager } from '../../browser/sessionManager.js';
 import { extractFoundersFromText, extractPricingFromText } from '../../research/deepWebResearcher.js';
 import { taskCheckpointManager } from '../../task/checkpointManager.js';
+import { getGmailTokens } from '../../db/neon.js';
+import { getUserSmtpCredentials } from '../../db/smtp.js';
 
 export class BrainDecisionEngine {
   /**
@@ -46,6 +48,7 @@ export class BrainDecisionEngine {
       prompt,
       conversationHistory = [],
       defaultLocation,
+      autoSendProposals = false,
       maxIterations = 15,
       sendEvent,
       abortSignal,
@@ -66,8 +69,20 @@ export class BrainDecisionEngine {
     if (existingCheckpoint && (existingCheckpoint.status === 'EXECUTING' || existingCheckpoint.status === 'WAITING_FOR_INPUT')) {
       state = taskCheckpointManager.deserializeBrainState(existingCheckpoint);
       state.status = 'EXECUTING';
+      state.autoSendProposals = Boolean(autoSendProposals || state.autoSendProposals);
       if (chatId && !state.chatId) {
         state.chatId = chatId;
+      }
+      if (userId && userId !== 'anonymous' && state.gmailConnected === undefined) {
+        try {
+          const tokens = await getGmailTokens(userId);
+          const smtp = await getUserSmtpCredentials(userId);
+          state.gmailConnected = Boolean(
+            tokens?.refreshToken || tokens?.accessToken || smtp?.appPassword
+          );
+        } catch {
+          state.gmailConnected = false;
+        }
       }
 
       // Handle in-flight pending action from crash / restart
@@ -583,7 +598,9 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         userApiKey: opts.userApiKey,
       });
       // Check if tool explicitly returned failure payload
-      if (toolResult && (toolResult.success === false || toolResult.status === 'error')) {
+      if (toolResult && toolResult.skipped) {
+        success = true;
+      } else if (toolResult && (toolResult.success === false || toolResult.status === 'error')) {
         success = false;
         error = toolResult.error || toolResult.message || `Tool ${action.toolName} reported execution failure`;
         state.failedActions.push({
@@ -1057,18 +1074,16 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         return false;
       }
 
-      // 2. If email requested or outreach requested, must have verified email
-      if ((plan.requestedFields.includes('email') || plan.emailActionsRequired) && (!ent.email || ent.emailStatus === 'NOT_FOUND' || !ent.email.includes('@'))) {
-        return false;
-      }
-
+      // Missing requested fields are reported as "Not found" — they do not block quantity.
       // 3. If proposal required, proposal must be generated
       if (plan.proposalRequired && !ent.proposalMarkdown) {
         return false;
       }
 
-      // 4. If email sending required, email must be verified as successfully dispatched
-      if (plan.emailActionsRequired && !ent.emailSent) {
+      // 4. If outreach was requested AND Gmail is connected AND this entity has an email, wait until send is attempted
+      const shouldSend =
+        Boolean(plan.emailActionsRequired && state.gmailConnected && (state.autoSendProposals || plan.emailActionsRequired));
+      if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError) {
         return false;
       }
 
@@ -1210,11 +1225,12 @@ Generate the strict JSON BrainTaskPlan for this request.`;
                (bName && (e.name.toLowerCase().includes(bName.toLowerCase()) || bName.toLowerCase().includes(e.name.toLowerCase())))
       );
 
+      const emailSkipped = Boolean(observation.extractedData?.skipped);
       const emailDispatched = observation.success === true && Boolean(observation.extractedData?.success) && Boolean(observation.extractedData?.messageId);
       const actionRecord: EntityActionRecord = {
         actionId: `email_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         actionType: 'send_email',
-        actionStatus: emailDispatched ? 'EMAIL_SENT' : 'EMAIL_FAILED',
+        actionStatus: emailDispatched ? 'EMAIL_SENT' : emailSkipped ? 'EMAIL_FAILED' : 'EMAIL_FAILED',
         lifecycleState: emailDispatched ? 'SUCCEEDED' : 'FAILED',
         executedAt: new Date().toISOString(),
         targetEntity: matched?.name || bName || recipient,
@@ -1233,6 +1249,10 @@ Generate the strict JSON BrainTaskPlan for this request.`;
           matched.emailSent = true;
           matched.status = 'EMAIL_SENT';
           matched.emailSendError = undefined;
+        } else if (emailSkipped) {
+          matched.emailSent = false;
+          matched.emailSendError = observation.extractedData?.reason || 'already_contacted';
+          matched.status = 'PROCESSED';
         } else {
           matched.emailSent = false;
           matched.emailSendError = observation.error || observation.extractedData?.error || 'Failed to dispatch email';
@@ -1334,9 +1354,14 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
       );
 
       // Guard against premature LLM completion when target quantity and pipeline are incomplete
-      if (parsedAction.type === 'complete' && fullyCompletedCount < targetQuantity && state.currentIteration < Math.min(state.maxIterations, 8)) {
-        console.log(`[Brain Anti-Premature Completion Guard] LLM suggested complete, but only ${fullyCompletedCount}/${targetQuantity} satisfied. Routing next pipeline step.`);
-        return this.getDeterministicNextPipelineAction(state);
+      if (
+        (parsedAction.type === 'complete' || parsedAction.type === 'report_unavailable') &&
+        fullyCompletedCount < targetQuantity &&
+        state.currentIteration < state.maxIterations - 1
+      ) {
+        console.log(`[Brain Anti-Premature Completion Guard] LLM suggested ${parsedAction.type}, but only ${fullyCompletedCount}/${targetQuantity} satisfied. Routing next pipeline step.`);
+        const forced = this.getDeterministicNextPipelineAction(state);
+        if (forced.type !== 'complete') return forced;
       }
 
       return parsedAction;
@@ -1356,7 +1381,9 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     const targetQuantity = plan.quantity;
 
     // Check 1: Do we need to dispatch emails for proposals that are ready?
-    if (plan.emailActionsRequired) {
+    const shouldDispatchEmail =
+      Boolean(state.gmailConnected) && Boolean(plan.emailActionsRequired || state.autoSendProposals);
+    if (shouldDispatchEmail) {
       const candToSend = qualifiedCandidates.find((e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError);
       if (candToSend) {
         return {
@@ -1425,23 +1452,24 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     }
 
     // Check 5: If fully completed count is still below target quantity, perform search variation
-    if (fullyCompletedCount < targetQuantity && state.currentIteration <= 10) {
+    if (fullyCompletedCount < targetQuantity && state.currentIteration < state.maxIterations - 1) {
       const location = plan.location || '';
+      const base = (plan.entities.join(' ') || plan.goal).slice(0, 80);
       const queryVariations = [
-        `local businesses in ${location}`,
-        `shops and stores in ${location}`,
-        `bakeries and cafes in ${location}`,
-        `services and clinics in ${location}`,
-        `contractors and plumbers in ${location}`,
+        `${base} ${location}`.trim(),
+        `${base} ${location} official website`.trim(),
+        `${base} ${location} contact email`.trim(),
+        `best ${base} ${location}`.trim(),
+        `${base} ${location} directory`.trim(),
       ];
       const query = queryVariations[(state.currentIteration - 1) % queryVariations.length];
       return {
         type: 'execute_tool',
-        toolName: 'search_businesses',
+        toolName: state.currentIteration % 2 === 0 ? 'search_businesses' : 'google_search',
         toolArgs: {
-          query: plan.goal.slice(0, 60),
+          query,
           location,
-          limit: 20,
+          limit: Math.min(Math.max(targetQuantity, 10), 30),
         },
         rationale: `Discovering additional candidates to meet target quantity (${fullyCompletedCount}/${targetQuantity})`,
         expectedObservation: 'Additional candidate businesses for verification',
@@ -1554,7 +1582,10 @@ Synthesize the final grounded response strictly following all rules:
 - Include source citations and evidence quotes for all verified data.
 - If requested fields or entities were not found or not publicly listed, explicitly state "Not found / Not publicly listed / Unable to verify".
 - Never claim an email was sent if it failed or was not executed.
-- Do not invent any data.`;
+- If outreach was requested but Gmail is not connected, say so clearly and keep the proposals as drafts.
+- Do not invent any data.
+Gmail connected: ${state.gmailConnected ? 'yes' : 'no'}
+Auto-send setting: ${state.autoSendProposals ? 'on' : 'off'}`;
 
     try {
       const response = await brainLlmClient.complete({

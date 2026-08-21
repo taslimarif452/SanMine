@@ -7,6 +7,7 @@
 import { BrainTaskPlan, BrainActionDecision, UserIntentType, ActionDecisionType } from './types.js';
 import { isToolRegistered, BRAIN_AVAILABLE_TOOLS } from './toolSchemas.js';
 import { extractLocationCandidate, extractLocationFromHistory } from '../../agent.js';
+import { parseWorkGoal } from '../workIntent.js';
 
 export class PlanValidator {
   /**
@@ -21,6 +22,8 @@ export class PlanValidator {
     if (!raw || typeof raw !== 'object') {
       return this.createFallbackPlan(prompt, defaultLocation, conversationHistory);
     }
+
+    const workGoal = parseWorkGoal(prompt, defaultLocation);
 
     const goal = typeof raw.goal === 'string' && raw.goal.trim()
       ? raw.goal.trim()
@@ -88,11 +91,19 @@ export class PlanValidator {
     if (/\b(https|ssl|tls|security|certificate)\b/i.test(lowerP)) detectedFields.add('https');
     if (/\b(proposal|pitch)\b/i.test(lowerP)) detectedFields.add('proposal');
 
+    for (const f of workGoal.requestedFields) detectedFields.add(f);
     const finalRequestedFields = Array.from(detectedFields);
 
-    const noWebsiteRequired = /\b(?:no|without|lacking|bina|missing)\s+(?:any\s+)?websites?\b|\bwebsites?\s+nahi\s+hai\b|\bno-websites?\b/i.test(lowerP);
-    const emailActionsRequired = /\b(?:send|dispatch|outreach)\s+(?:outreach\s+)?(?:proposals?|emails?|mails?)\b|\b(?:proposal|email|mail)\s+bhejo\b|\bcold\s+emails?\b|\breach\s+out\b/i.test(lowerP);
-    const proposalRequired = /\b(?:proposals?|pitch|pitches|personalized\s+proposals?|pitch\s+drafts?)\b|\bproposals?\s+(?:banao|likho)\b/i.test(lowerP) || emailActionsRequired;
+    const noWebsiteRequired =
+      workGoal.noWebsiteRequired ||
+      /\b(?:no|without|lacking|bina|missing)\s+(?:any\s+)?websites?\b|\bwebsites?\s+nahi\s+hai\b|\bno-websites?\b/i.test(lowerP);
+    const emailActionsRequired =
+      workGoal.emailActionsRequired ||
+      /\b(?:send|dispatch|outreach)\s+(?:outreach\s+)?(?:proposals?|emails?|mails?)\b|\b(?:proposal|email|mail)\s+bhejo\b|\bcold\s+emails?\b|\breach\s+out\b/i.test(lowerP);
+    const proposalRequired =
+      workGoal.proposalRequired ||
+      /\b(?:proposals?|pitch|pitches|personalized\s+proposals?|pitch\s+drafts?)\b|\bproposals?\s+(?:banao|likho)\b/i.test(lowerP) ||
+      emailActionsRequired;
 
     const requiredActions: string[] = [];
     if (/find|search|discover|list|get/i.test(lowerP) || userIntent === 'DISCOVERY_AND_EXTRACTION') {
@@ -150,6 +161,9 @@ export class PlanValidator {
 
     // Resolve location
     let resolvedLocation = extractLocationCandidate(prompt);
+    if (!resolvedLocation && workGoal.location) {
+      resolvedLocation = workGoal.location;
+    }
     if (!resolvedLocation && defaultLocation) {
       resolvedLocation = defaultLocation;
     }
@@ -158,6 +172,20 @@ export class PlanValidator {
     }
 
     let nextAction = this.validateAndRepairAction(raw.nextAction, prompt, userIntent, resolvedLocation);
+
+    if (
+      (nextAction.toolName === 'google_search' || nextAction.toolName === 'search_businesses') &&
+      !nextAction.toolArgs.limit
+    ) {
+      nextAction.toolArgs.limit = Math.min(Math.max(quantity, 10), 30);
+    }
+    if (
+      (nextAction.toolName === 'google_search' || nextAction.toolName === 'search_businesses') &&
+      workGoal.searchQuery &&
+      (!nextAction.toolArgs.query || nextAction.toolArgs.query === prompt.slice(0, 120))
+    ) {
+      nextAction.toolArgs.query = workGoal.searchQuery;
+    }
 
     // Check if missing required location for local business discovery
     const lowerPrompt = prompt.toLowerCase();

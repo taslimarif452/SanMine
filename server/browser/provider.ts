@@ -1354,8 +1354,10 @@ export class LiveBrowserSession implements BrowserSession {
       process.env.BROWSER_RUNTIME_URL ||
       process.env.CHROME_WS_ENDPOINT
     );
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const shouldTryPlaywright = Boolean(playwrightChromium && (hasRemoteCdp || !isServerless));
 
-    if (hasRemoteCdp && playwrightChromium) {
+    if (shouldTryPlaywright) {
       this.delegate = new PlaywrightChromiumSession(config);
     } else {
       this.delegate = new HttpFallbackBrowserSession(config);

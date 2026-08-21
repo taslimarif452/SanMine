@@ -21,31 +21,31 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 const SUGGESTED_PROMPTS = [
   {
     id: 'p1',
-    title: 'Explain React & Python Architecture',
-    description: 'Normal conversational dialogue, code explanations & brainstorming',
-    prompt: 'Explain how React state and useEffect work together, and give a Python FastAPI backend example.',
-    icon: Sparkles,
-  },
-  {
-    id: 'p2',
-    title: 'Agent Mode: Discover 20 Companies',
-    description: 'Autonomous web search, website extraction and lead discovery',
-    prompt: '/Google par 20 companies find karo aur unke contact details aur website extract karo.',
+    title: 'Find 20 US AI SaaS companies',
+    description: 'Delegate research: verify, inspect official sites, extract founder + email',
+    prompt: 'Mujhe US mein 20 relevant SaaS companies find karo jo AI use karti hain, unki official websites check karo, founders aur contact email nikalo, aur verified report sources ke saath do.',
     icon: Search,
   },
   {
+    id: 'p2',
+    title: 'Leads + proposals + send via Gmail',
+    description: 'Find businesses, draft proposals, send from your connected Gmail',
+    prompt: 'India mein 20 restaurants find karo jinki websites outdated hain, unke contact details collect karo, proposal generate karo aur connected Gmail se bhej do.',
+    icon: Terminal,
+  },
+  {
     id: 'p3',
-    title: 'Agent Mode: Inspect Website & Pricing',
-    description: 'Autonomous browser navigation to extract pricing and services',
-    prompt: '/is website par jao aur pricing, services aur contact email nikalo: https://example.com',
+    title: 'Inspect a website',
+    description: 'Open the official site and extract pricing, services, contact email',
+    prompt: 'Is website par jao aur pricing, services aur contact email nikalo: https://example.com',
     icon: Globe,
   },
   {
     id: 'p4',
-    title: 'Agent Mode: Social Profile Intelligence',
-    description: 'Autonomous public profile inspection and research',
-    prompt: '/Instagram se is public profile ka detail nikalo aur summary banao.',
-    icon: Terminal,
+    title: 'Just talk',
+    description: 'Normal conversation, explanations, writing help',
+    prompt: 'Explain how React state and useEffect work together.',
+    icon: Sparkles,
   },
 ];
 
@@ -245,7 +245,7 @@ export const ChatWorkspace: React.FC = () => {
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={2}
-                placeholder="Ask anything, or start with / to activate autonomous Agent Mode..."
+                placeholder="Delegate work — find companies, inspect sites, send proposals — or just talk..."
                 className="w-full bg-transparent text-[#1F1E1B] placeholder-[#9C988F] text-sm md:text-[15px] resize-none focus:outline-none leading-relaxed px-1"
               />
 
@@ -292,31 +292,31 @@ export const ChatWorkspace: React.FC = () => {
             {!inputVal.trim() && (
               <div className="mt-2.5 text-center text-xs text-[#8C887F] space-y-1 px-2">
                 <p className="font-medium text-[#6B6862]">
-                  Start with <span className="font-mono font-bold text-[#C66A3D] bg-[#EFECE6] px-1.5 py-0.5 rounded text-[11px]">/</span> to give SanMine an autonomous task
+                  Describe the work. SanMine researches, verifies, and can send proposals from your connected Gmail.
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-[#9C988F]">
                   <button
                     type="button"
-                    onClick={() => setInputVal('/Google par 20 companies find karo')}
+                    onClick={() => setInputVal('US mein 20 AI SaaS companies find karo')}
                     className="hover:text-[#C66A3D] font-mono text-[#7D7972] transition-colors cursor-pointer bg-[#F2F0EB]/60 px-1.5 py-0.5 rounded"
                   >
-                    /Google par 20 companies find karo
+                    US mein 20 AI SaaS companies find karo
                   </button>
                   <span className="text-[#C5C2BA]">•</span>
                   <button
                     type="button"
-                    onClick={() => setInputVal('/is website par jao aur pricing nikalo')}
+                    onClick={() => setInputVal('is website par jao aur pricing nikalo')}
                     className="hover:text-[#C66A3D] font-mono text-[#7D7972] transition-colors cursor-pointer bg-[#F2F0EB]/60 px-1.5 py-0.5 rounded"
                   >
-                    /is website par jao aur pricing nikalo
+                    is website par jao aur pricing nikalo
                   </button>
                   <span className="text-[#C5C2BA]">•</span>
                   <button
                     type="button"
-                    onClick={() => setInputVal('/Instagram se is public profile ka detail nikalo')}
+                    onClick={() => setInputVal('leads find karo, proposal banao aur Gmail se bhej do')}
                     className="hover:text-[#C66A3D] font-mono text-[#7D7972] transition-colors cursor-pointer bg-[#F2F0EB]/60 px-1.5 py-0.5 rounded"
                   >
-                    /Instagram se is public profile ka detail nikalo
+                    leads find karo aur Gmail se bhej do
                   </button>
                 </div>
               </div>
@@ -523,8 +523,8 @@ export const ChatWorkspace: React.FC = () => {
             {/* Sub-docked helper hint */}
             {!inputVal.trim() && (
               <div className="mt-1.5 flex items-center justify-between text-[11px] text-[#8C887F] px-2">
-                <span>Start with <span className="font-mono font-medium text-[#C66A3D]">/</span> to give SanMine an autonomous task</span>
-                <span className="hidden sm:inline text-[#9C988F]">Ex: <span className="font-mono text-[#7D7972]">/Google par 20 companies find karo</span></span>
+                <span>Work is delegated automatically. <span className="font-mono font-medium text-[#C66A3D]">/</span> still forces Agent Mode.</span>
+                <span className="hidden sm:inline text-[#9C988F]">Ex: <span className="font-mono text-[#7D7972]">US mein 20 AI SaaS companies find karo</span></span>
               </div>
             )}
           </div>

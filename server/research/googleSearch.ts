@@ -181,7 +181,7 @@ export async function performGoogleWebSearch(
 ): Promise<GoogleSearchResponse> {
   const rawQuery = (query || '').trim();
   const limit = Math.min(Math.max(options.limit || 10, 1), 30);
-  const timeoutMs = options.timeoutMs || 3500;
+  const timeoutMs = options.timeoutMs || 8000;
 
   if (!rawQuery) {
     return {
