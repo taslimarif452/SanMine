@@ -7,8 +7,8 @@
     --bg-sidebar: #F2F1ED;
     --bg-card: #FFFFFF;
     --border-color: #E5E2DC;
-    --accent: #C66A3D;
-    --accent-hover: #B55B2E;
+    --accent: #D25234;
+    --accent-hover: #BE4528;
     --text-primary: #1F1E1B;
     --text-secondary: #6B6862;
     --text-muted: #9C988F;
@@ -44,68 +44,8 @@
   background: #BDB7AB;
 }
 
-/* FullPage.js Navigation Indicator Custom Styling */
-#fp-nav {
-  z-index: 35 !important;
+/* FullPage & Stacked Overlay Transitions */
+.overlay-deck-transition {
+  transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1), opacity 600ms ease;
+  will-change: transform, opacity;
 }
-
-#fp-nav ul li,
-.fp-slidesNav ul li {
-  margin: 10px 0 !important;
-  width: 14px !important;
-  height: 14px !important;
-}
-
-#fp-nav ul li a span,
-.fp-slidesNav ul li a span {
-  background: #C5C1B8 !important;
-  border-radius: 50% !important;
-  width: 8px !important;
-  height: 8px !important;
-  margin: -4px 0 0 -4px !important;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-#fp-nav ul li:hover a span,
-.fp-slidesNav ul li:hover a span {
-  background: #A39E94 !important;
-  width: 10px !important;
-  height: 10px !important;
-  margin: -5px 0 0 -5px !important;
-}
-
-#fp-nav ul li a.active span,
-.fp-slidesNav ul li a.active span {
-  background: #C66A3D !important;
-  width: 10px !important;
-  height: 10px !important;
-  margin: -5px 0 0 -5px !important;
-  box-shadow: 0 0 0 3px rgba(198, 106, 61, 0.2) !important;
-}
-
-#fp-nav ul li .fp-tooltip {
-  color: #1F1E1B !important;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
-  font-size: 11px !important;
-  font-weight: 500 !important;
-  background: #FFFFFF !important;
-  padding: 4px 9px !important;
-  border-radius: 8px !important;
-  border: 1px solid #E5E2DC !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-  top: -4px !important;
-  letter-spacing: -0.01em !important;
-}
-
-#fp-nav ul li .fp-tooltip.fp-right {
-  right: 22px !important;
-}
-
-/* Ensure fullpage overflow scrolling is smooth */
-.fp-overflow {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  width: 100%;
-}
-
