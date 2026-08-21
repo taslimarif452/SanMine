@@ -484,6 +484,20 @@ export class PlanValidator {
       };
     }
 
+    if (/\b(saas|software|crm|startup|startups)\b/i.test(prompt)) {
+      const loc = defaultLocation ? ` in ${defaultLocation}` : '';
+      return {
+        type: 'execute_tool',
+        toolName: 'google_search',
+        toolArgs: {
+          query: `${prompt.slice(0, 80)} official website`.trim(),
+          location: defaultLocation,
+        },
+        rationale: `Search official SaaS/software company websites${loc}`,
+        expectedObservation: 'Official company websites to inspect',
+      };
+    }
+
     return {
       type: 'execute_tool',
       toolName: 'google_search',
