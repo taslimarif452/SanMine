@@ -1241,7 +1241,6 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError && ent.status !== 'PROCESSED') {
         return false;
       }
-      }
 
       return true;
     }).length;
