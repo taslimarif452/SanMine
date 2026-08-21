@@ -55,7 +55,6 @@ export const ChatWorkspace: React.FC = () => {
     submitPrompt,
     agentStatus,
     stopTask,
-    configuredModels,
   } = useAgent();
 
   const [inputVal, setInputVal] = useState<string>('');
@@ -118,34 +117,6 @@ export const ChatWorkspace: React.FC = () => {
 
   const isWorking =
     agentStatus === 'thinking' || agentStatus === 'running_tool' || agentStatus === 'responding';
-
-  const getProviderName = (provId: string) => {
-    if (provId === 'google') return 'Google Gemini';
-    if (provId === 'openai') return 'OpenAI';
-    if (provId === 'openrouter') return 'OpenRouter';
-    return provId;
-  };
-
-  const getModelDisplayName = (modelId?: string) => {
-    if (!modelId) return '';
-    const configured = configuredModels.find(
-      (m) => m.modelId === modelId || m.id === modelId || m.name === modelId
-    );
-    if (configured) return configured.displayName;
-    if (modelId.includes('/')) {
-      const parts = modelId.split('/')[1].replace(/:free$/i, '').split(/[-_]/);
-      return parts
-        .map((p) => {
-          const upper = p.toUpperCase();
-          if (upper === 'GPT' || upper === 'OSS' || upper === 'LLAMA' || upper === 'MISTRAL' || upper === 'QWEN' || upper === 'CLAUDE') {
-            return upper;
-          }
-          return p.charAt(0).toUpperCase() + p.slice(1);
-        })
-        .join(' ');
-    }
-    return modelId;
-  };
 
   useEffect(() => {
     if (!isUserScrolledUpRef.current) {
@@ -323,6 +294,18 @@ export const ChatWorkspace: React.FC = () => {
             {/* Messages Stream */}
             {messages.map((msg) => {
               const isUser = msg.role === 'user' || msg.sender === 'user';
+              const executionWasLeftActive =
+                !msg.isStreaming &&
+                (msg.execution?.status === 'running' || msg.execution?.status === 'planning');
+              const activityStatus = executionWasLeftActive
+                ? 'completed'
+                : msg.execution?.status;
+              const activitySteps = executionWasLeftActive
+                ? msg.execution?.steps.map((step) =>
+                    step.status === 'running' ? { ...step, status: 'completed' as const } : step
+                  )
+                : msg.execution?.steps;
+
               return (
                 <div key={msg.id} className="w-full space-y-4">
                   {isUser ? (
@@ -366,11 +349,11 @@ export const ChatWorkspace: React.FC = () => {
                       {/* Inline Agent Activity / Real Tool Progress */}
                       {msg.execution && msg.execution.steps && msg.execution.steps.length > 0 && (
                         <InlineAgentActivity
-                          status={msg.execution.status}
+                          status={activityStatus || msg.execution.status}
                           aiPersonalizationStatus={msg.execution.aiPersonalizationStatus}
                           reason={msg.execution.reason}
-                          steps={msg.execution.steps}
-                          summary={msg.execution.summary}
+                          steps={activitySteps || msg.execution.steps}
+                          summary={executionWasLeftActive ? 'Task completed' : msg.execution.summary}
                         />
                       )}
 
@@ -390,11 +373,11 @@ export const ChatWorkspace: React.FC = () => {
                             content={msg.content || msg.text || ''}
                             isStreaming={msg.isStreaming}
                           />
-                        ) : (
+                        ) : msg.isStreaming ? (
                           <div className="flex items-center gap-2 py-2 text-sm text-[#9C988F]">
                             <span className="w-2 h-2 rounded-full bg-[#C66A3D] animate-pulse" />
                           </div>
-                        )}
+                        ) : null}
 
                         {/* Copy button below response */}
                         {(msg.content || msg.text) && (

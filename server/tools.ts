@@ -69,13 +69,10 @@ const searchBusinessesTool: AgentTool = {
     const location = rawLocation.slice(0, 100);
     const limit = typeof input?.limit === 'number' ? Math.min(Math.max(input.limit, 1), 50) : 20;
 
-    const activeProvider = searchRegistry.getActiveProvider();
-
     emitEvent?.({
       type: 'tool.started',
       tool: 'search_businesses',
       message: `Searching for ${query}${location ? ` in ${location}` : ''}...`,
-      detail: `Provider: ${activeProvider.name}`,
     });
 
     if (!searchRegistry.isConfigured()) {
@@ -116,7 +113,6 @@ const searchBusinessesTool: AgentTool = {
         type: 'tool.completed',
         tool: 'search_businesses',
         message: `Discovered ${result.businesses.length} candidate listings (not yet verified)`,
-        detail: `Provider: ${result.providerName}`,
       });
 
       return result;
@@ -1130,14 +1126,27 @@ export async function executeTool(
   emitEvent?: (event: any) => void,
   context?: ToolExecutionContext
 ): Promise<any> {
-  const tool = toolRegistry.get(toolName);
+  const normalizedToolName = typeof toolName === 'string' ? toolName.trim() : '';
+
+  // A completion/clarification decision intentionally has no tool name. Treat a
+  // malformed empty execution request as a no-op instead of surfacing Tool "".
+  if (!normalizedToolName) {
+    console.warn('[Tool Registry] Skipping execution request with an empty tool name.');
+    return {
+      success: true,
+      skipped: true,
+      reason: 'empty_tool_name',
+    };
+  }
+
+  const tool = toolRegistry.get(normalizedToolName);
   if (!tool) {
     emitEvent?.({
       type: 'tool.failed',
-      tool: toolName,
-      message: `Tool "${toolName}" is not registered on backend.`,
+      tool: normalizedToolName,
+      message: `Tool "${normalizedToolName}" is not registered on backend.`,
     });
-    throw new Error(`Tool "${toolName}" is not registered.`);
+    throw new Error(`Tool "${normalizedToolName}" is not registered.`);
   }
 
   try {
@@ -1145,8 +1154,8 @@ export async function executeTool(
   } catch (error: any) {
     emitEvent?.({
       type: 'tool.failed',
-      tool: toolName,
-      message: `Error executing ${toolName}: ${error.message || 'Unknown error'}`,
+      tool: normalizedToolName,
+      message: `Error executing ${normalizedToolName}: ${error.message || 'Unknown error'}`,
     });
     throw error;
   }

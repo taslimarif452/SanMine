@@ -74,6 +74,26 @@ function generateUuid(): string {
   });
 }
 
+function cleanActivityDetail(detail: unknown): string | undefined {
+  if (typeof detail !== 'string') return undefined;
+
+  const cleaned = detail
+    .replace(/Provider:\s*API-Free Web Research Engine(?:\s*·\s*)?/gi, '')
+    .replace(/^\s*·\s*|\s*·\s*$/g, '')
+    .trim();
+
+  return cleaned || undefined;
+}
+
+function settleActivitySteps(
+  steps: ActivityStep[],
+  status: 'completed' | 'warning' | 'error'
+): ActivityStep[] {
+  return steps.map((step) =>
+    step.status === 'running' ? { ...step, status } : step
+  );
+}
+
 interface AgentContextType {
   // Navigation & View
   currentView: 'chat' | 'settings';
@@ -1091,6 +1111,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     ...msg.execution,
                     status: 'stopped' as const,
                     summary: 'Execution stopped by user',
+                    steps: settleActivitySteps(msg.execution.steps, 'warning'),
                   }
                 : undefined,
             }
@@ -1293,6 +1314,15 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             try {
               const event: any = JSON.parse(trimmed.slice(6));
 
+              // Ignore malformed tool events rather than rendering an empty tool row.
+              if (
+                typeof event.type === 'string' &&
+                event.type.startsWith('tool.') &&
+                (typeof event.tool !== 'string' || !event.tool.trim())
+              ) {
+                continue;
+              }
+
               // Handle event types
               const humanToolLabel = (tool?: string) => {
                 const map: Record<string, string> = {
@@ -1403,7 +1433,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   id: stepId,
                   title: event.title || event.message || 'Processing',
                   status: (event.status as any) || 'completed',
-                  detail: event.detail,
+                  detail: cleanActivityDetail(event.detail),
                 };
 
                 activeExecution = activeExecution
@@ -1442,7 +1472,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   id: stepId,
                   title: humanToolLabel(event.tool),
                   status: 'running',
-                  detail: event.detail || event.message,
+                  detail: cleanActivityDetail(event.detail) || event.message,
                 };
 
                 activeExecution = activeExecution
@@ -1481,7 +1511,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   id: stepId,
                   title: event.title || event.message || `Completed ${event.tool}`,
                   status: 'completed',
-                  detail: event.detail,
+                  detail: cleanActivityDetail(event.detail),
                 };
 
                 activeExecution = activeExecution
@@ -1520,7 +1550,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   id: stepId,
                   title: event.title || event.message || `Failed ${event.tool}`,
                   status: 'error',
-                  detail: event.detail,
+                  detail: cleanActivityDetail(event.detail),
                 };
 
                 activeExecution = activeExecution
@@ -1654,6 +1684,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     ...activeExecution,
                     status: 'completed',
                     summary: event.message || 'Task completed successfully',
+                    steps: settleActivitySteps(activeExecution.steps, 'completed'),
                   };
                 }
 
@@ -1675,6 +1706,37 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       : msg
                   )
                 );
+              } else if (event.type === 'task.stopped') {
+                setAgentStatus('idle');
+                setExecutionEvents((prev) => [...prev, event]);
+
+                if (activeExecution) {
+                  activeExecution = {
+                    ...activeExecution,
+                    status: 'stopped',
+                    reason: event.reason,
+                    integration: event.integration,
+                    summary: event.message || 'Task stopped',
+                    steps: settleActivitySteps(activeExecution.steps, 'warning'),
+                  };
+                }
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMsgId
+                      ? {
+                          ...msg,
+                          isStreaming: false,
+                          execution: activeExecution
+                            ? {
+                                id: `exec-${assistantMsgId}`,
+                                ...activeExecution,
+                              }
+                            : undefined,
+                        }
+                      : msg
+                  )
+                );
               } else if (event.type === 'task.failed') {
                 setAgentStatus('error');
                 setExecutionEvents((prev) => [...prev, event]);
@@ -1684,6 +1746,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     ...activeExecution,
                     status: 'error',
                     summary: event.message || 'Task encountered an error',
+                    steps: settleActivitySteps(activeExecution.steps, 'error'),
                   };
                 }
 
@@ -1706,6 +1769,16 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 );
               } else if (event.type === 'error') {
                 setAgentStatus('error');
+
+                if (activeExecution) {
+                  activeExecution = {
+                    ...activeExecution,
+                    status: 'error',
+                    summary: event.message || 'Task encountered an error',
+                    steps: settleActivitySteps(activeExecution.steps, 'error'),
+                  };
+                }
+
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMsgId
@@ -1715,6 +1788,12 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                           isError: true,
                           content: event.message || msg.content || 'An error occurred during execution.',
                           text: event.message || msg.text || 'An error occurred during execution.',
+                          execution: activeExecution
+                            ? {
+                                id: `exec-${assistantMsgId}`,
+                                ...activeExecution,
+                              }
+                            : msg.execution,
                         }
                       : msg
                   )
@@ -1727,6 +1806,20 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
       }
 
+      // The network stream ending is terminal even if an upstream provider omitted
+      // its task.completed event. Settle any stale activity before final render.
+      if (
+        activeExecution &&
+        (activeExecution.status === 'running' || activeExecution.status === 'planning')
+      ) {
+        activeExecution = {
+          ...activeExecution,
+          status: 'completed',
+          summary: 'Task completed',
+          steps: settleActivitySteps(activeExecution.steps, 'completed'),
+        };
+      }
+
       // Finalize assistant message
       setMessages((prev) => {
         const finalized = prev.map((msg) =>
@@ -1736,6 +1829,12 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 isStreaming: false,
                 content: accumulatedText || msg.content,
                 text: accumulatedText || msg.text,
+                execution: activeExecution
+                  ? {
+                      id: `exec-${assistantMsgId}`,
+                      ...activeExecution,
+                    }
+                  : msg.execution,
               }
             : msg
         );
@@ -1763,6 +1862,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       } else {
         console.error('Chat stream error:', err);
         setAgentStatus('error');
+
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMsgId
@@ -1772,6 +1872,14 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   isError: true,
                   content: `Execution failed: ${err.message || 'Network error'}`,
                   text: `Execution failed: ${err.message || 'Network error'}`,
+                  execution: msg.execution
+                    ? {
+                        ...msg.execution,
+                        status: 'error' as const,
+                        summary: 'Task encountered an error',
+                        steps: settleActivitySteps(msg.execution.steps, 'error'),
+                      }
+                    : undefined,
                 }
               : msg
           )
