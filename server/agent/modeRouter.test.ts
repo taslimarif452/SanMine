@@ -19,6 +19,7 @@ const normalChatPrompts = [
   'Kya haal hai?',
   'Explain Python',
   'What is React?',
+  'What is recursion in Python?',
   'Explain quantum computing',
   'Write a paragraph about India',
   'What do you think about this idea?',
@@ -58,6 +59,16 @@ for (const prompt of normalChatPrompts) {
   );
 }
 console.log(`✓ Test 1 Passed: All ${normalChatPrompts.length} normal chat messages routed to normal_chat.\n`);
+
+// =========================================================================
+// TEST 1b: "What is recursion in Python?" -> normal chat, no agent tools
+// =========================================================================
+console.log('[TEST 1b] "What is recursion in Python?" is conversational (no tools)...');
+const recursionResult = resolveExecutionMode('What is recursion in Python?');
+assert.strictEqual(recursionResult.mode, 'normal_chat', 'Recursion question stays in normal chat');
+assert.strictEqual(recursionResult.isAgentContinuation, false, 'Recursion question is not an agent continuation');
+assert.strictEqual(recursionResult.isExplicitSlashCommand, false, 'Recursion question is not a slash command');
+console.log('✓ Test 1b Passed: No agent tools triggered for a general programming question.\n');
 
 // =========================================================================
 // TEST 2: Leading Slash Commands (MUST Activate Autonomous Agent Mode)
