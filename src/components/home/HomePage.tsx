@@ -39,16 +39,185 @@ import {
 /* DATA DEFINITIONS & COPY ACCURATE TO THE CLAUDE CODE STYLE SCREENSHOT       */
 /* -------------------------------------------------------------------------- */
 
-const PLATFORM_ICONS = [
-  { name: 'Terminal', icon: '⌨️' },
-  { name: 'Web', icon: '🌐' },
-  { name: 'iOS', icon: '📱' },
-  { name: 'Android', icon: '🤖' },
-  { name: 'GitHub', icon: '🐙' },
-  { name: 'VS Code', icon: '💻' },
-  { name: 'JetBrains', icon: '⚡' },
-  { name: 'Slack', icon: '💬' }
+export interface AIModelInfo {
+  name: string;
+  provider: string;
+  iconType: string;
+  accent: string;
+}
+
+const AI_MODELS_LIST: AIModelInfo[] = [
+  {
+    name: 'OpenAI',
+    provider: 'GPT-4o & o3-mini',
+    iconType: 'openai',
+    accent: '#10A37F'
+  },
+  {
+    name: 'Anthropic Claude',
+    provider: 'Claude 3.7 Sonnet',
+    iconType: 'claude',
+    accent: '#D97706'
+  },
+  {
+    name: 'Google Gemini',
+    provider: 'Gemini 2.5 Flash & Pro',
+    iconType: 'gemini',
+    accent: '#388bfd'
+  },
+  {
+    name: 'OpenRouter',
+    provider: 'Unified API Gateway',
+    iconType: 'openrouter',
+    accent: '#6366F1'
+  },
+  {
+    name: 'DeepSeek',
+    provider: 'DeepSeek R1 & V3',
+    iconType: 'deepseek',
+    accent: '#2563EB'
+  },
+  {
+    name: 'Meta Llama',
+    provider: 'Llama 3.3 70B',
+    iconType: 'meta',
+    accent: '#0668E1'
+  },
+  {
+    name: 'Mistral AI',
+    provider: 'Mistral Large 2',
+    iconType: 'mistral',
+    accent: '#EA580C'
+  },
+  {
+    name: 'Groq',
+    provider: 'LPU Ultra-Fast Inference',
+    iconType: 'groq',
+    accent: '#F43F5E'
+  },
+  {
+    name: 'xAI Grok',
+    provider: 'Grok 2 & Grok 3',
+    iconType: 'grok',
+    accent: '#18181B'
+  },
+  {
+    name: 'Cohere',
+    provider: 'Command R+ & Embed',
+    iconType: 'cohere',
+    accent: '#059669'
+  },
+  {
+    name: 'Qwen',
+    provider: 'Qwen 2.5 Coder',
+    iconType: 'qwen',
+    accent: '#7C3AED'
+  }
 ];
+
+/* -------------------------------------------------------------------------- */
+/* REAL AUTHENTIC AI MODEL SVG LOGOS                                          */
+/* -------------------------------------------------------------------------- */
+
+const renderModelIcon = (iconType: string) => {
+  switch (iconType) {
+    case 'openai':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#10A37F]" viewBox="0 0 24 24">
+          <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.259 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7466-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1683a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4947zm-9.66-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1402-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1683a.0757.0757 0 0 1-.071 0l-4.8303-2.7866A4.504 4.504 0 0 1 2.3408 7.8956zm16.0993 3.8558L12.5973 8.3829l2.02-1.1636a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.402-.6862zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.407 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.6601zm-12.641-4.1444a4.4992 4.4992 0 0 1 3.53-1.8512 4.4755 4.4755 0 0 1 2.8764 1.0408l-.1419.0804-4.7783 2.7582a.7948.7948 0 0 0-.3927.6813v6.7369L6.874 13.914a.071.071 0 0 1-.038-.052V8.2794a4.4992 4.4992 0 0 1 1.9728-3.6967zm1.1118 7.4339l2.7913-1.6133 2.7913 1.6133v3.2267l-2.7913 1.6133-2.7913-1.6133z" />
+        </svg>
+      );
+    case 'claude':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#D97706]" viewBox="0 0 24 24">
+          <path d="M12 2C12.5 6.8 17.2 11.5 22 12C17.2 12.5 12.5 17.2 12 22C11.5 17.2 6.8 12.5 2 12C6.8 11.5 11.5 6.8 12 2Z" fill="#D97706" />
+          <path d="M16.5 7.5C14.8 9.2 14.8 11.8 16.5 13.5C14.8 11.8 12.2 11.8 10.5 13.5C12.2 11.8 12.2 9.2 10.5 7.5C12.2 9.2 14.8 9.2 16.5 7.5Z" fill="#FAF9F5" opacity="0.3" />
+        </svg>
+      );
+    case 'gemini':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0" viewBox="0 0 24 24">
+          <defs>
+            <linearGradient id="gemini-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#1B72E8" />
+              <stop offset="45%" stopColor="#8E24AA" />
+              <stop offset="100%" stopColor="#E91E63" />
+            </linearGradient>
+          </defs>
+          <path
+            fill="url(#gemini-grad)"
+            d="M12 0C12 6.627 6.627 12 0 12C6.627 12 12 17.373 12 24C12 17.373 17.373 12 24 12C17.373 12 12 6.627 12 0Z"
+          />
+        </svg>
+      );
+    case 'openrouter':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 text-[#6366F1]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="6" cy="6" r="3.5" fill="#6366F1" fillOpacity="0.25" />
+          <circle cx="18" cy="6" r="3.5" fill="#6366F1" fillOpacity="0.25" />
+          <circle cx="12" cy="18" r="3.5" fill="#6366F1" fillOpacity="0.25" />
+          <path d="M8.8 8.2L10.5 15M15.2 8.2L13.5 15M9.5 6h5" />
+        </svg>
+      );
+    case 'deepseek':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#2563EB]" viewBox="0 0 24 24">
+          <path d="M2.5 13.5C2.5 7.5 7.8 3 13.5 3C18.2 3 21.8 5.8 22.5 9.8C22.7 11.2 21.5 12.5 20.2 12.8C18.5 13.2 16.5 12.2 15.2 11C14 9.8 12.2 9.5 10.8 10.5C9 11.8 6.5 13.5 2.5 13.5Z" />
+          <circle cx="15" cy="7.5" r="1.5" className="fill-[#FFFFFF]" />
+          <path d="M4 16C7 19.5 11.5 21 16 19.8C18.8 19 21.2 17 22 14.5" stroke="#2563EB" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+        </svg>
+      );
+    case 'meta':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#0668E1]" viewBox="0 0 24 24">
+          <path d="M12 15.6c-2.3 0-4-1.7-4.8-3.6.8-1.9 2.5-3.6 4.8-3.6 2.3 0 4 1.7 4.8 3.6-.8 1.9-2.5 3.6-4.8 3.6zm0-9.2C7.9 6.4 4.5 9 2.8 12c1.7 3 5.1 5.6 9.2 5.6s7.5-2.6 9.2-5.6c-1.7-3-5.1-5.6-9.2-5.6z" />
+          <path d="M6.5 12C7.2 10.3 8.8 9 12 9s4.8 1.3 5.5 3c-.7 1.7-2.3 3-5.5 3s-4.8-1.3-5.5-3z" fill="#0668E1" opacity="0.3" />
+        </svg>
+      );
+    case 'mistral':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#EA580C]" viewBox="0 0 24 24">
+          <rect x="2" y="3" width="4.5" height="4.5" rx="0.8" />
+          <rect x="9.75" y="3" width="4.5" height="4.5" rx="0.8" />
+          <rect x="17.5" y="3" width="4.5" height="4.5" rx="0.8" />
+          <rect x="2" y="9.75" width="4.5" height="4.5" rx="0.8" />
+          <rect x="9.75" y="9.75" width="4.5" height="4.5" rx="0.8" />
+          <rect x="17.5" y="9.75" width="4.5" height="4.5" rx="0.8" />
+          <rect x="2" y="16.5" width="4.5" height="4.5" rx="0.8" />
+          <rect x="17.5" y="16.5" width="4.5" height="4.5" rx="0.8" />
+        </svg>
+      );
+    case 'groq':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#F43F5E]" viewBox="0 0 24 24">
+          <path d="M13.5 2L3 13.5H12L10.5 22L21 10.5H12L13.5 2Z" />
+        </svg>
+      );
+    case 'grok':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 text-[#18181B]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 4L20 20M20 4L4 20" />
+          <circle cx="12" cy="12" r="3.2" fill="currentColor" />
+        </svg>
+      );
+    case 'cohere':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 fill-current text-[#059669]" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 18C8.69 18 6 15.31 6 12C6 8.69 8.69 6 12 6C15.31 6 18 8.69 18 12C18 15.31 15.31 18 12 18Z" opacity="0.25" />
+          <path d="M12 5C8.13 5 5 8.13 5 12C5 15.87 8.13 19 12 19C15.87 19 19 15.87 19 12C19 8.13 15.87 5 12 5ZM12 15C10.34 15 9 13.66 9 12C9 10.34 10.34 9 12 9C13.66 9 15 10.34 15 12C15 13.66 13.66 15 12 15Z" />
+        </svg>
+      );
+    case 'qwen':
+      return (
+        <svg className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 shrink-0 text-[#7C3AED]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L21 7.2V16.8L12 22L3 16.8V7.2L12 2Z" fill="#7C3AED" fillOpacity="0.15" />
+          <path d="M12 12L21 7.2M12 12V22M12 12L3 7.2" />
+        </svg>
+      );
+    default:
+      return <Cpu className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-[#1F1E1B]" />;
+  }
+};
 
 const LOGO_PARTNERS = [
   { name: 'NASA', logoText: 'NASA' },
@@ -472,33 +641,9 @@ export const HomePage: React.FC = () => {
       </header>
 
       {/* ------------------------------------------------------------- */}
-      {/* Right Edge Floating Pill Navigator                            */}
+      {/* Right Edge Floating Pill Navigator (Hidden from UI)           */}
       {/* ------------------------------------------------------------- */}
-      <div className="fixed right-3 sm:right-5 top-1/2 -translate-y-1/2 z-50 hidden md:flex flex-col items-center gap-2.5 bg-[#FFFFFF]/80 backdrop-blur-md p-1.5 rounded-full border border-[#E5E2DC] shadow-xs">
-        {SECTIONS_METADATA.map((sec, idx) => {
-          const isActive = activeSection === idx;
-          return (
-            <button
-              key={sec.id}
-              type="button"
-              onClick={() => goToSection(idx)}
-              aria-label={`Go to ${sec.title}`}
-              className="group relative flex items-center justify-center cursor-pointer p-0.5"
-            >
-              <span
-                className={`block rounded-full transition-all duration-300 ${
-                  isActive
-                    ? 'w-2 h-5 bg-[#D25234] rounded-full'
-                    : 'w-1.5 h-1.5 bg-[#D5D2CA] group-hover:bg-[#9C988F]'
-                }`}
-              />
-              <span className="absolute right-7 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-[#1F1E1B] text-[#FFFFFF] text-[10px] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 shadow-md">
-                {sec.title}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Hidden per user UI request */}
 
       {/* ------------------------------------------------------------- */}
       {/* Bottom Floating Step Pill (Prev / Next)                       */}
@@ -659,18 +804,39 @@ export const HomePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Other Ways to Use Row */}
-            <div className="pt-2 text-center space-y-2">
-              <div className="text-[11px] text-[#9C988F]">
-                Other ways to use Sanmine Space
+            {/* AI Models Multi-Provider Horizontal Marquee (Height: 500px) - "Trusted By & Connectivity" Sub-section */}
+            <div
+              id="ai-models-marquee-section"
+              className="w-full h-[500px] min-h-[480px] max-h-[500px] flex flex-col justify-center items-center bg-transparent border-0 shadow-none overflow-hidden relative my-4 select-none"
+            >
+              {/* Sub-section Header */}
+              <div className="text-center mb-14 sm:mb-16">
+                <span className="text-sm sm:text-base md:text-lg uppercase tracking-[0.3em] font-bold text-[#8C887B]">
+                  Trusted By & Connectivity
+                </span>
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-xs text-[#5C5952]">
-                {PLATFORM_ICONS.map((p) => (
-                  <div key={p.name} className="flex flex-col items-center gap-1 group cursor-pointer">
-                    <span className="text-base group-hover:scale-110 transition-transform">{p.icon}</span>
-                    <span className="text-[10px] text-[#6B6862] group-hover:text-[#1F1E1B]">{p.name}</span>
-                  </div>
-                ))}
+
+              {/* Left & Right Gradient masks for smooth continuous fade */}
+              <div className="absolute left-0 top-0 bottom-0 w-24 sm:w-44 bg-gradient-to-r from-[#F7F6F2] to-transparent z-20 pointer-events-none" />
+              <div className="absolute right-0 top-0 bottom-0 w-24 sm:w-44 bg-gradient-to-l from-[#F7F6F2] to-transparent z-20 pointer-events-none" />
+
+              {/* Single Large Row Horizontal Marquee Showcase (Real Official Logo & Name, No Cards/Borders/Subtitles) */}
+              <div className="overflow-hidden w-full py-4">
+                <div className="animate-marquee gap-16 sm:gap-24 md:gap-32 items-center">
+                  {[...AI_MODELS_LIST, ...AI_MODELS_LIST].map((model, idx) => (
+                    <div
+                      key={`${model.name}-marquee-${idx}`}
+                      className="flex items-center gap-5 sm:gap-7 bg-transparent border-0 shadow-none p-0 cursor-pointer group shrink-0 transition-transform duration-200 hover:scale-105"
+                    >
+                      <div className="flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-200">
+                        {renderModelIcon(model.iconType)}
+                      </div>
+                      <span className="text-2xl sm:text-3xl md:text-4xl font-semibold text-[#1F1E1B] tracking-tight group-hover:text-[#D25234] transition-colors whitespace-nowrap font-serif sm:font-sans">
+                        {model.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
