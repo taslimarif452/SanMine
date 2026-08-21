@@ -227,17 +227,6 @@ export const ChatWorkspace: React.FC = () => {
           {/* Conversational Composer (Docked at bottom on mobile, centered on desktop) */}
           <div className="w-full max-w-[840px] relative group mt-auto md:mt-0 pt-2 md:pt-0">
             <div className="bg-[#FFFFFF] border border-[#E5E2DC] focus-within:border-[#C66A3D] focus-within:ring-1 focus-within:ring-[#C66A3D]/40 rounded-[16px] p-3 sm:p-4 transition-all duration-200 shadow-[0_4px_24px_rgba(0,0,0,0.03)] space-y-2">
-              {/* Agent Mode Trigger Banner when user types / */}
-              {isSlashCommand && (
-                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[#FAF4ED] border border-[#E8D7C8] text-[#C66A3D] text-xs font-semibold animate-fadeIn">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#C66A3D]" />
-                    <span>Agent Mode Active</span>
-                  </div>
-                  <span className="text-[11px] font-normal text-[#A35933]">Autonomous execution, search & browser tools enabled</span>
-                </div>
-              )}
-
               <textarea
                 id="composer-input"
                 ref={textareaRef}
@@ -462,17 +451,6 @@ export const ChatWorkspace: React.FC = () => {
 
           <div className="w-full max-w-[840px] mx-auto">
             <div className="bg-[#FFFFFF] border border-[#E5E2DC] focus-within:border-[#C66A3D] focus-within:ring-1 focus-within:ring-[#C66A3D]/40 rounded-[16px] p-3 sm:p-4 transition-all shadow-[0_2px_12px_rgba(0,0,0,0.03)] space-y-2">
-              {/* Agent Mode Trigger Banner for Docked Composer */}
-              {isSlashCommand && (
-                <div className="flex items-center justify-between px-2 py-0.5 rounded-md bg-[#FAF4ED] border border-[#E8D7C8] text-[#C66A3D] text-[11px] font-semibold animate-fadeIn">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-[#C66A3D]" />
-                    <span>Agent Mode</span>
-                  </div>
-                  <span className="text-[10px] font-normal text-[#A35933]">Autonomous tools enabled</span>
-                </div>
-              )}
-
               <textarea
                 id="composer-docked-input"
                 ref={dockedTextareaRef}
@@ -480,7 +458,7 @@ export const ChatWorkspace: React.FC = () => {
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Talk normally, or start with / to activate Agent Mode..."
+                placeholder="Ask SanMine to research, find leads, analyze data, create proposals, send emails, or complete a task..."
                 className="w-full bg-transparent text-[#1F1E1B] placeholder-[#9C988F] text-xs md:text-sm resize-none focus:outline-none px-1 leading-relaxed max-h-32"
               />
 

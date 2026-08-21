@@ -8,6 +8,20 @@
  * goals must also enter Agent Mode without requiring a leading slash.
  */
 
+import { extractLocationCandidate, KNOWN_CITIES } from '../search/location.js';
+
+/**
+ * High-level user intent classification used by the agent brain and orchestrator.
+ * Kept deterministic (regex based) so intent routing never depends on an LLM call.
+ */
+export type UserIntentType =
+  | 'CONVERSATIONAL'
+  | 'RESEARCH'
+  | 'DATA_COLLECTION'
+  | 'AUTOMATION'
+  | 'EXTERNAL_ACTION'
+  | 'MULTI_STEP_AGENT_TASK';
+
 export interface WorkGoal {
   isWorkTask: boolean;
   quantity: number;
@@ -39,7 +53,7 @@ const QUANTITY_TASK =
   /\b(\d{1,3})\s+(?:[a-zA-Z-]+\s+){0,3}(?:compan(?:y|ies)|leads?|business(?:es)?|hotels?|universit(?:y|ies)|restaurants?|baker(?:y|ies)|startups?|saas|clients?|prospects?|agenc(?:y|ies)|websites?|stores?|shops?|profiles?|accounts?|clinics?|dentists?|gyms?|salons?|cafes?|entities)\b/i;
 
 const SEND_OUTREACH =
-  /\b((?:send|dispatch|bhejo|bhej|outreach)\b[\s\S]{0,80}\b(?:proposal|email|mail|pitch|outreach|gmail)|(?:proposal|email|mail|pitch|gmail)\b[\s\S]{0,60}\b(?:send|bhejo|bhej|dispatch))\b/i;
+  /\b((?:send|dispatch|bhejo|bhej|outreach)\b[\s\S]{0,80}\b(?:proposals?|emails?|mails?|pitches?|outreach|gmail)|(?:proposals?|emails?|mails?|pitches?|gmail)\b[\s\S]{0,60}\b(?:send|bhejo|bhej|dispatch))\b/i;
 
 const MARKET_RESEARCH =
   /\b(market research|lead generation|competitor analysis|web research|cold outreach|decision makers?)\b/i;
@@ -72,6 +86,78 @@ export function isWorkDelegationTask(text: string): boolean {
 }
 
 /**
+ * Classifies the user's message into a high-level intent bucket.
+ *
+ * - CONVERSATIONAL        → casual chat / explanation, no delegated work.
+ * - RESEARCH              → discover / find / compare entities (leads, companies, businesses).
+ * - DATA_COLLECTION       → collect / extract / scrape structured fields (emails, phones, pricing).
+ * - AUTOMATION            → inspect / analyze / browse a specific site or account.
+ * - EXTERNAL_ACTION       → dispatch outreach (send emails / proposals) via Gmail.
+ * - MULTI_STEP_AGENT_TASK → a research + proposal + outreach pipeline (or genuinely multi-step work).
+ */
+export function classifyUserIntent(text: string): UserIntentType {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t) return 'CONVERSATIONAL';
+  const lower = t.toLowerCase();
+
+  if (!isWorkDelegationTask(t)) return 'CONVERSATIONAL';
+
+  const isResearch =
+    /\b(find|search|discover|prospect|research|list|compare|qualify|dhoondo|dhundo|khojo|nikalo|nikal)\b/i.test(lower) &&
+    /\b(compan(?:y|ies)|leads?|business(?:es)?|prospects?|clients?|startups?|saas|websites?|restaurants?|baker(?:y|ies)|gyms?|dentists?|hotels?|universit(?:y|ies))\b/i.test(lower);
+  const isDataCollection =
+    /\b(collect|extract|scrape|gather|data|nikalo|emails?|phones?|pricing|contact|founders?)\b/i.test(lower) &&
+    !/send|dispatch|bhej|outreach/i.test(lower);
+  const isAutomation =
+    /\b(inspect|audit|analyze|open|browse|navigate|kholo|jao|website|profile)\b/i.test(lower) &&
+    !/\b(find|search|discover)\b/i.test(lower);
+  const isExternalAction = /\b(send|dispatch|bhej|bhejo|outreach|gmail)\b/i.test(lower);
+  const isProposal = /\b(proposal|pitch|pitches)\b/i.test(lower);
+
+  if (isExternalAction && (isResearch || isProposal || isDataCollection)) {
+    return 'MULTI_STEP_AGENT_TASK';
+  }
+  if (isExternalAction) return 'EXTERNAL_ACTION';
+  if (isDataCollection) return 'DATA_COLLECTION';
+  if (isAutomation) return 'AUTOMATION';
+  if (isResearch) return 'RESEARCH';
+  return 'MULTI_STEP_AGENT_TASK';
+}
+
+/**
+ * Matches a user confirmation to send the prepared proposals / emails.
+ * Covers English, Hindi, and Hinglish affirmations.
+ */
+const AFFIRMATIVE_SEND_PATTERN =
+  /^(yes|y|yeah|yep|haan|ha|ok|okay|sure|send|send them|bhej|bhej do|bhejo|go ahead|confirm|do it|please send)\b/i;
+
+/**
+ * Matches a user decline to send prepared proposals / emails.
+ */
+const NEGATIVE_SEND_PATTERN =
+  /^(no|nah|nahi|nope|don't|cancel|stop|not now|mat bhejo|mat bhej)\b/i;
+
+/**
+ * Returns true when the user explicitly confirms sending the prepared emails/proposals.
+ */
+export function isAffirmativeSendConfirmation(text: string): boolean {
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t) return false;
+  return AFFIRMATIVE_SEND_PATTERN.test(t);
+}
+
+/**
+ * Returns true when the user explicitly declines sending the prepared emails/proposals.
+ */
+export function isNegativeConfirmation(text: string): boolean {
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t) return false;
+  return NEGATIVE_SEND_PATTERN.test(t);
+}
+
+/**
  * Pulls a structured work goal out of an arbitrary English / Hindi / Hinglish prompt.
  */
 export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoal {
@@ -96,6 +182,21 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
     else if (/^(UK|United Kingdom)$/i.test(raw)) location = 'United Kingdom';
     else location = raw;
   }
+
+  // Fall back to the shared location extractor + known-city dictionary from
+  // server/search/location.ts (Delhi, Bangalore, New York, London, ...).
+  if (!location) {
+    const candidate = extractLocationCandidate(rawQuery);
+    if (candidate) {
+      const key = candidate.toLowerCase().trim();
+      if (KNOWN_CITIES[key]) {
+        location = KNOWN_CITIES[key].city || candidate;
+      } else {
+        location = candidate;
+      }
+    }
+  }
+
   if (!location && defaultLocation) location = defaultLocation.trim();
 
   const requestedFields = new Set<string>();

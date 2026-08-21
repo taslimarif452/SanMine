@@ -32,6 +32,7 @@ import { extractFoundersFromText, extractPricingFromText } from '../../research/
 import { taskCheckpointManager } from '../../task/checkpointManager.js';
 import { getGmailTokens } from '../../db/neon.js';
 import { getUserSmtpCredentials } from '../../db/smtp.js';
+import { isAffirmativeSendConfirmation, isNegativeConfirmation } from '../workIntent.js';
 
 export class BrainDecisionEngine {
   /**
@@ -141,6 +142,16 @@ export class BrainDecisionEngine {
         }
       }
 
+      // If resuming from an email-send confirmation prompt, honor the user's reply.
+      let resumingFromEmailConfirmation = false;
+      if (state.awaitingEmailConfirmation && (isAffirmativeSendConfirmation(prompt) || isNegativeConfirmation(prompt))) {
+        state.awaitingEmailConfirmation = false;
+        const affirmative = isAffirmativeSendConfirmation(prompt);
+        state.emailConfirmationGranted = affirmative;
+        state.emailConfirmationDeclined = !affirmative;
+        resumingFromEmailConfirmation = true;
+      }
+
       // If resuming from a clarification prompt, incorporate user's clarification
       if (existingCheckpoint.status === 'WAITING_FOR_INPUT') {
         const clarifiedText = prompt.trim();
@@ -150,19 +161,46 @@ export class BrainDecisionEngine {
         // Update user intent & goal with clarified context
         state.userPrompt = `${state.userPrompt} (Clarification: ${clarifiedText})`;
 
-        // Pivot next action from ask_clarification to active search/execution
-        const queryTarget = `${state.plan.entities.join(' ') || state.plan.goal} ${state.plan.location || clarifiedText}`.trim();
-        state.plan.nextAction = {
-          type: 'execute_tool',
-          toolName: 'google_search',
-          toolArgs: {
-            query: queryTarget,
-            location: state.plan.location || clarifiedText,
-            limit: Math.max(state.plan.quantity, 5),
-          },
-          rationale: `Proceeding with search in clarified location: ${state.plan.location || clarifiedText}`,
-          expectedObservation: 'Search result candidate targets with URLs and titles',
-        };
+        if (resumingFromEmailConfirmation && state.gmailConnected && state.emailConfirmationGranted) {
+          // User confirmed the send -> go straight to dispatching the first ready email.
+          const readyToSend = (state.verifiedEntities || []).find(
+            (e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError
+          );
+          state.plan.nextAction = readyToSend
+            ? {
+                type: 'execute_tool',
+                toolName: 'send_email',
+                toolArgs: {
+                  to: readyToSend.email,
+                  businessName: readyToSend.name,
+                  subject: readyToSend.proposalSubject || `Digital Growth Strategy for ${readyToSend.name}`,
+                  body: readyToSend.proposalMarkdown,
+                },
+                rationale: `User confirmed dispatch. Sending outreach proposal to ${readyToSend.name} (${readyToSend.email})`,
+                expectedObservation: 'Email dispatch confirmation with message ID',
+              }
+            : {
+                type: 'complete',
+                toolName: '',
+                toolArgs: {},
+                rationale: 'No emails left to send after confirmation.',
+                expectedObservation: 'Final response synthesis',
+              };
+        } else if (!resumingFromEmailConfirmation) {
+          // Pivot next action from ask_clarification to active search/execution
+          const queryTarget = `${state.plan.entities.join(' ') || state.plan.goal} ${state.plan.location || clarifiedText}`.trim();
+          state.plan.nextAction = {
+            type: 'execute_tool',
+            toolName: 'google_search',
+            toolArgs: {
+              query: queryTarget,
+              location: state.plan.location || clarifiedText,
+              limit: Math.max(state.plan.quantity, 5),
+            },
+            rationale: `Proceeding with search in clarified location: ${state.plan.location || clarifiedText}`,
+            expectedObservation: 'Search result candidate targets with URLs and titles',
+          };
+        }
       }
 
       plan = state.plan;
@@ -181,6 +219,12 @@ export class BrainDecisionEngine {
         prompt,
         message: 'Universal Agent Brain analyzing request...',
         timestamp: new Date().toISOString(),
+      });
+
+      sendEvent({
+        type: 'task.progress',
+        taskId,
+        message: 'Understanding request',
       });
 
       // 1. FORMULATE INITIAL PLAN VIA LLM
@@ -209,7 +253,9 @@ export class BrainDecisionEngine {
         })) || [],
         plan,
         currentIteration: 0,
-        maxIterations: Math.min(maxIterations, 20),
+        // Iteration budget scales with the requested quantity:
+        // maxIterations = min(max(qty*4+8, 15), 40)
+        maxIterations: Math.min(Math.max((plan.quantity || 1) * 4 + 8, 15), 40),
         verifiedEntities: [],
         visitedUrls: new Set<string>(),
         visitedDomains: new Set<string>(),
@@ -450,6 +496,40 @@ export class BrainDecisionEngine {
           activeModel = ev.newModel;
         },
       });
+
+      if (nextDecision.type === 'ask_clarification') {
+        const question =
+          nextDecision.clarificationQuestion || 'Please clarify what you need.';
+        state.status = 'WAITING_FOR_INPUT';
+        state.finalResponse = question;
+
+        await taskCheckpointManager.saveCheckpoint(state, { lastProvider: activeProvider, lastModel: activeModel, chatId: state.chatId });
+
+        sendEvent({
+          type: 'message.delta',
+          content: question,
+        });
+        sendEvent({
+          type: 'message.completed',
+          content: question,
+        });
+        sendEvent({
+          type: 'task.completed',
+          status: 'waiting_for_input',
+          taskId,
+          message: question,
+        });
+
+        return {
+          success: true,
+          finalAnswer: question,
+          plan: state.plan,
+          state,
+          verifiedCount: state.verifiedEntities.length,
+          totalFacts: state.extractedFacts.length,
+          sourcesVerifiedCount: state.visitedUrls.size,
+        };
+      }
 
       if (nextDecision.type === 'complete' || nextDecision.type === 'report_unavailable') {
         state.status = 'COMPLETED';
@@ -1080,9 +1160,14 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         return false;
       }
 
-      // 4. If outreach was requested AND Gmail is connected AND this entity has an email, wait until send is attempted
+      // 4. If outreach was requested AND Gmail is connected AND the user authorized
+      //    sending (auto-send or explicit confirmation), wait until the send is attempted.
       const shouldSend =
-        Boolean(plan.emailActionsRequired && state.gmailConnected && (state.autoSendProposals || plan.emailActionsRequired));
+        Boolean(
+          plan.emailActionsRequired &&
+            state.gmailConnected &&
+            (state.autoSendProposals || state.emailConfirmationGranted)
+        );
       if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError) {
         return false;
       }
@@ -1308,6 +1393,44 @@ Generate the strict JSON BrainTaskPlan for this request.`;
     const fullyCompletedCount = this.countFullyCompletedEntities(state);
     const targetQuantity = state.plan.quantity;
 
+    // EMAIL PERMISSION GATE (deterministic): if proposals are ready but the user has
+    // not confirmed dispatch, ask before sending. Never dispatch without consent and
+    // never claim EMAIL_SENT when Gmail is not connected.
+    if ((state.plan.emailActionsRequired || state.autoSendProposals) && !state.emailConfirmationDeclined) {
+      const readyToSend = qualifiedCandidates.filter(
+        (e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError
+      );
+      if (readyToSend.length > 0) {
+        if (!state.gmailConnected) {
+          state.awaitingEmailConfirmation = false;
+          state.emailConfirmationGranted = false;
+          return {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Gmail is not connected; proposals are prepared but cannot be sent.',
+            clarificationQuestion:
+              `I found ${state.verifiedEntities.length} verified leads and prepared ${readyToSend.length} personalized emails, but your Gmail is not connected. ` +
+              `Please connect Gmail (OAuth or SMTP) in Settings, then tell me to send them.`,
+            expectedObservation: 'User reply to the clarification prompt',
+          };
+        }
+        if (!state.autoSendProposals && !state.emailConfirmationGranted) {
+          state.awaitingEmailConfirmation = true;
+          return {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Proposals are ready but the user must confirm the send.',
+            clarificationQuestion:
+              `I found ${state.verifiedEntities.length} verified leads and prepared ${readyToSend.length} personalized emails. ` +
+              `Do you want me to send them from your connected Gmail?`,
+            expectedObservation: 'User reply to the clarification prompt',
+          };
+        }
+      }
+    }
+
     // Remaining unvisited destination URLs from search candidates
     const unvisitedCandidates = state.discoveredCandidates.filter((c) => !state.visitedUrls.has(c.url));
 
@@ -1380,9 +1503,48 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     const fullyCompletedCount = this.countFullyCompletedEntities(state);
     const targetQuantity = plan.quantity;
 
+    // EMAIL PERMISSION GATE: proposals are ready to send but the user has not
+    // confirmed dispatch yet -> pause and ask before sending. Never claim EMAIL_SENT.
+    if ((plan.emailActionsRequired || state.autoSendProposals) && !state.emailConfirmationDeclined) {
+      const readyToSend = qualifiedCandidates.filter(
+        (e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError
+      );
+      if (readyToSend.length > 0) {
+        if (!state.gmailConnected) {
+          state.awaitingEmailConfirmation = false;
+          state.emailConfirmationGranted = false;
+          return {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Gmail is not connected; proposals are prepared but cannot be sent.',
+            clarificationQuestion:
+              `I found ${state.verifiedEntities.length} verified leads and prepared ${readyToSend.length} personalized emails, but your Gmail is not connected. ` +
+              `Please connect Gmail (OAuth or SMTP) in Settings, then tell me to send them.`,
+            expectedObservation: 'User reply to the clarification prompt',
+          };
+        }
+        if (!state.autoSendProposals && !state.emailConfirmationGranted) {
+          state.awaitingEmailConfirmation = true;
+          return {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Proposals are ready but the user must confirm the send.',
+            clarificationQuestion:
+              `I found ${state.verifiedEntities.length} verified leads and prepared ${readyToSend.length} personalized emails. ` +
+              `Do you want me to send them from your connected Gmail?`,
+            expectedObservation: 'User reply to the clarification prompt',
+          };
+        }
+      }
+    }
+
     // Check 1: Do we need to dispatch emails for proposals that are ready?
     const shouldDispatchEmail =
-      Boolean(state.gmailConnected) && Boolean(plan.emailActionsRequired || state.autoSendProposals);
+      Boolean(state.gmailConnected) &&
+      Boolean(plan.emailActionsRequired || state.autoSendProposals) &&
+      Boolean(state.autoSendProposals || state.emailConfirmationGranted);
     if (shouldDispatchEmail) {
       const candToSend = qualifiedCandidates.find((e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError);
       if (candToSend) {
