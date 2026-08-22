@@ -598,7 +598,8 @@ export function extractLocationCandidate(text: string): string {
     const nonLocationWords = [
       'company', 'website', 'business', 'store', 'page', 'profile', 'product', 'item', 'services',
       'pricing', 'founder', 'email', 'phone', 'contact', 'info', 'details', 'sab', 'aaj', 'kal',
-      'kuch', 'aise', 'unka', 'inka', 'mera', 'apna', 'ye', 'wo'
+      'kuch', 'aise', 'unka', 'inka', 'mera', 'apna', 'ye', 'wo',
+      'google', 'bing', 'duckduckgo', 'python', 'react', 'api', 'online', 'web', 'search'
     ];
     if (!nonLocationWords.includes(word.toLowerCase())) {
       return word.charAt(0).toUpperCase() + word.slice(1);

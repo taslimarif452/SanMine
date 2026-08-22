@@ -33,6 +33,7 @@ import {
   performOfficialWebSearch,
   toGoogleSearchResultItems,
 } from './officialSearch.js';
+import { buildWebSearchQuery } from './searchQuery.js';
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -205,8 +206,12 @@ export async function performGoogleWebSearch(
     };
   }
 
-  // Build target query string
-  let targetQuery = rawQuery;
+  // Build a compact provider query. Search providers must never receive the
+  // entire task instruction in place of a subject query.
+  const looksLikeTaskInstruction = /\b(mujhe|please|find|search|discover|karo|nikalo|dhoondo|get|collect|emails?|decision makers?)\b/i.test(rawQuery);
+  let targetQuery = looksLikeTaskInstruction
+    ? buildWebSearchQuery(rawQuery, { location: options.locationFilter }) || rawQuery
+    : rawQuery;
   if (options.socialSite) {
     targetQuery = `site:${options.socialSite} ${targetQuery}`;
   }

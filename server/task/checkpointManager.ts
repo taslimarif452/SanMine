@@ -51,6 +51,11 @@ export interface SerializableTaskCheckpoint {
   replanCount: number;
   remainingWork?: string;
   finalResponse?: string;
+  requestedQuantity?: number;
+  verifiedQuantity?: number;
+  remaining?: number;
+  searchAttempts?: number;
+  queriesUsed?: string[];
   lastProvider?: AIProviderId;
   lastModel?: string;
   updatedAt: string;
@@ -97,7 +102,7 @@ export class TaskCheckpointManager {
         completionCriteria: '',
         nextAction: {
           type: 'execute_tool' as const,
-          toolName: 'google_search',
+          toolName: 'search_web',
           toolArgs: { query: state.userPrompt || '' },
           rationale: 'Initial search',
           expectedObservation: 'Search results',
@@ -119,6 +124,11 @@ export class TaskCheckpointManager {
       replanCount: typeof state.replanCount === 'number' ? state.replanCount : 0,
       remainingWork: state.remainingWork || state.plan?.completionCriteria || '',
       finalResponse: state.finalResponse,
+      requestedQuantity: state.requestedQuantity,
+      verifiedQuantity: state.verifiedQuantity,
+      remaining: state.remaining,
+      searchAttempts: state.searchAttempts,
+      queriesUsed: state.queriesUsed ? [...state.queriesUsed] : [],
       lastProvider: meta?.lastProvider,
       lastModel: meta?.lastModel,
       updatedAt: new Date().toISOString(),
@@ -166,7 +176,7 @@ export class TaskCheckpointManager {
         completionCriteria: snapshot.remainingWork || '',
         nextAction: {
           type: 'execute_tool',
-          toolName: 'google_search',
+          toolName: 'search_web',
           toolArgs: { query: snapshot.userPrompt || '' },
           rationale: 'Resume task with search',
           expectedObservation: 'Search results',
@@ -211,6 +221,11 @@ export class TaskCheckpointManager {
       replanCount: typeof snapshot.replanCount === 'number' ? snapshot.replanCount : 0,
       remainingWork: snapshot.remainingWork || plan.completionCriteria || '',
       finalResponse: snapshot.finalResponse,
+      requestedQuantity: typeof snapshot.requestedQuantity === 'number' ? snapshot.requestedQuantity : plan.quantity,
+      verifiedQuantity: typeof snapshot.verifiedQuantity === 'number' ? snapshot.verifiedQuantity : 0,
+      remaining: typeof snapshot.remaining === 'number' ? snapshot.remaining : plan.quantity,
+      searchAttempts: typeof snapshot.searchAttempts === 'number' ? snapshot.searchAttempts : 0,
+      queriesUsed: Array.isArray(snapshot.queriesUsed) ? [...snapshot.queriesUsed] : [],
     };
   }
 

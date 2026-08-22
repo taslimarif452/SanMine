@@ -237,8 +237,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           hasFirebaseAdminKey: !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY,
           // Web search provider availability — booleans ONLY. Key values are
           // never logged, returned, or sent to the frontend.
-          hasTavilyKey: !!(process.env.TAVILY_API_KEY || process.env.TAVILY_KEY),
-          hasSerperKey: !!(process.env.SERPER_API_KEY || process.env.SERPER_KEY),
+          hasTavilyKey: !!process.env.TAVILY_API_KEY,
+          hasSerperKey: !!process.env.SERPER_API_KEY,
           appUrl: process.env.APP_URL || 'https://sanmine.space',
         },
         diagnostics: {
@@ -246,7 +246,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           firebaseConfigured: !!(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_CONFIG),
           gmailConfigured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
           geminiConfigured: !!process.env.GEMINI_API_KEY,
-          webSearchConfigured: !!(process.env.TAVILY_API_KEY || process.env.TAVILY_KEY || process.env.SERPER_API_KEY || process.env.SERPER_KEY),
+          webSearchConfigured: !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY),
         },
       });
     }

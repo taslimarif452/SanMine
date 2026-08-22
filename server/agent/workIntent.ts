@@ -9,6 +9,7 @@
  */
 
 import { extractLocationCandidate, KNOWN_CITIES } from '../search/location.js';
+import { buildWebSearchQuery } from '../research/searchQuery.js';
 
 /**
  * High-level user intent classification used by the agent brain and orchestrator.
@@ -183,9 +184,10 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
     else location = raw;
   }
 
-  // Fall back to the shared location extractor + known-city dictionary from
-  // server/search/location.ts (Delhi, Bangalore, New York, London, ...).
-  if (!location) {
+  // Fall back to the shared location extractor + known-city dictionary only
+  // for delegated work. Words such as "in Python" in a normal explanation
+  // are not a research location.
+  if (!location && isWorkTask) {
     const candidate = extractLocationCandidate(rawQuery);
     if (candidate) {
       const key = candidate.toLowerCase().trim();
@@ -244,10 +246,9 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
   const entities: string[] = [];
   if (industry) entities.push(industry);
 
-  const searchParts = [industry || 'companies', location, /\bai\b/i.test(lower) ? 'AI' : '']
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+  // Keep provider input deterministic and compact. In particular, do not pass
+  // the user's instruction ("find ... and email ...") as a search query.
+  const searchQuery = buildWebSearchQuery(rawQuery, { location, industry });
 
   return {
     isWorkTask,
@@ -259,7 +260,7 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
     proposalRequired,
     emailActionsRequired,
     noWebsiteRequired,
-    searchQuery: searchParts || rawQuery.slice(0, 120),
+    searchQuery: searchQuery || 'companies',
     entities,
     rawQuery,
   };

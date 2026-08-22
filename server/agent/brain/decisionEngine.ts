@@ -33,6 +33,16 @@ import { taskCheckpointManager } from '../../task/checkpointManager.js';
 import { getGmailTokens } from '../../db/neon.js';
 import { getUserSmtpCredentials } from '../../db/smtp.js';
 import { describeWorkPlanForUser, isAffirmativeSendConfirmation, isNegativeConfirmation } from '../workIntent.js';
+import {
+  buildWebSearchQuery,
+  isNonOfficialCandidateUrl,
+  normalizeOfficialHomepage,
+  pickUnvisitedOfficialCandidate,
+} from '../../research/searchRouter.js';
+
+// Kept as a named export for consumers that need to inspect the deterministic
+// candidate selector without instantiating a second agent.
+export { pickUnvisitedOfficialCandidate } from '../../research/searchRouter.js';
 
 function isSaasOrSoftwareQuery(text: string): boolean {
   return /\b(saas|software|crm|startup|startups)\b/i.test(text || '');
@@ -67,6 +77,34 @@ function ensureStateCollections(state: BrainTaskState) {
   if (!state.visitedUrls) state.visitedUrls = new Set<string>();
   if (!state.visitedDomains) state.visitedDomains = new Set<string>();
   if (!state.verifiedEntities) state.verifiedEntities = [];
+  if (!state.queriesUsed) state.queriesUsed = [];
+  if (typeof state.searchAttempts !== 'number') state.searchAttempts = 0;
+  if (typeof state.requestedQuantity !== 'number') state.requestedQuantity = state.plan?.quantity || 1;
+  if (typeof state.verifiedQuantity !== 'number') state.verifiedQuantity = 0;
+  if (typeof state.remaining !== 'number') state.remaining = state.requestedQuantity;
+}
+
+function isDeterministicDiscoveryPlan(plan: BrainTaskPlan): boolean {
+  return plan.discoveryStrategy === 'search_first' &&
+    plan.userIntent !== 'DIRECT_CHAT' &&
+    plan.userIntent !== 'SYSTEM_DIAGNOSTIC' &&
+    plan.userIntent !== 'WEBSITE_INSPECTION';
+}
+
+function normalizedDomain(value: string): string {
+  try {
+    return new URL(value.startsWith('http') ? value : `https://${value}`).hostname
+      .toLowerCase()
+      .replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function displayNameFromInspection(pageTitle: string, candidateTitle: string, url: string): string {
+  const preferred = (pageTitle || candidateTitle || '').split(/\s+[|–—-]\s+/)[0].trim();
+  if (preferred && !/^(home|homepage|official website|website)$/i.test(preferred)) return preferred.slice(0, 120);
+  return normalizedDomain(url) || 'Verified company';
 }
 
 export class BrainDecisionEngine {
@@ -104,6 +142,7 @@ export class BrainDecisionEngine {
 
     if (existingCheckpoint && (existingCheckpoint.status === 'EXECUTING' || existingCheckpoint.status === 'WAITING_FOR_INPUT')) {
       state = taskCheckpointManager.deserializeBrainState(existingCheckpoint);
+      ensureStateCollections(state);
       state.status = 'EXECUTING';
       state.autoSendProposals = Boolean(autoSendProposals || state.autoSendProposals);
       if (chatId && !state.chatId) {
@@ -221,19 +260,33 @@ export class BrainDecisionEngine {
                 rationale: 'No emails left to send after confirmation.',
                 expectedObservation: 'Final response synthesis',
               };
-        } else if (!resumingFromEmailConfirmation) {
+        } else if (resumingFromEmailConfirmation) {
+          // A negative reply is still a completed permission decision. Do not
+          // replay the previous action or silently send anything later.
+          state.plan.nextAction = {
+            type: 'complete',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'User declined outreach dispatch; keep drafts unsent.',
+            expectedObservation: 'Final grounded report',
+          };
+        } else {
           // Pivot next action from ask_clarification to active search/execution
-          const queryTarget = `${state.plan.entities.join(' ') || state.plan.goal} ${state.plan.location || clarifiedText}`.trim();
+          const queryTarget = buildWebSearchQuery(
+            `${state.plan.entities.join(' ') || state.plan.goal} ${state.plan.location || clarifiedText}`.trim(),
+            { location: state.plan.location || clarifiedText }
+          );
           state.plan.nextAction = {
             type: 'execute_tool',
-            toolName: 'google_search',
+            toolName: 'search_web',
             toolArgs: {
               query: queryTarget,
               location: state.plan.location || clarifiedText,
               limit: Math.max(state.plan.quantity, 5),
+              attempt: state.searchAttempts || 0,
             },
             rationale: `Proceeding with search in clarified location: ${state.plan.location || clarifiedText}`,
-            expectedObservation: 'Search result candidate targets with URLs and titles',
+            expectedObservation: 'Search result candidate URLs',
           };
         }
       }
@@ -276,6 +329,21 @@ export class BrainDecisionEngine {
         abortSignal,
       });
 
+      // Resolve Gmail connectivity once, server-side. This is only a capability
+      // check; it never grants permission to send.
+      let initialGmailConnected = false;
+      if (userId && userId !== 'anonymous') {
+        try {
+          const tokens = await getGmailTokens(userId);
+          const smtp = await getUserSmtpCredentials(userId);
+          initialGmailConnected = Boolean(
+            tokens?.refreshToken || tokens?.accessToken || smtp?.appPassword
+          );
+        } catch {
+          initialGmailConnected = false;
+        }
+      }
+
       // Initialize State
       state = {
         taskId,
@@ -303,6 +371,15 @@ export class BrainDecisionEngine {
         status: 'EXECUTING',
         replanCount: 0,
         remainingWork: plan.completionCriteria,
+        // Backend-owned completion accounting. These values are updated after
+        // every observation and are the only source of truth for termination.
+        requestedQuantity: plan.quantity,
+        verifiedQuantity: 0,
+        remaining: plan.quantity,
+        searchAttempts: 0,
+        queriesUsed: [],
+        gmailConnected: initialGmailConnected,
+        autoSendProposals: Boolean(autoSendProposals),
         consecutiveEmptySearches: 0,
         searchExhausted: false,
       };
@@ -510,24 +587,31 @@ export class BrainDecisionEngine {
       // Checkpoint state immediately after action and observation update
       await taskCheckpointManager.saveCheckpoint(state, { lastProvider: activeProvider, lastModel: activeModel, chatId: state.chatId });
 
-      // Check if target quantity fully satisfied across all required pipeline actions
+      // Check completion using backend state, never an LLM phrase such as
+      // "Task completed". Search attempts are counted even when a provider
+      // returns zero rows or fails.
       const targetQuantity = state.plan.quantity;
       const fullyCompletedCount = this.countFullyCompletedEntities(state);
-      state.verifiedCount = fullyCompletedCount;
-      state.requiredQuantity = targetQuantity;
-      state.remainingQuantity = Math.max(0, targetQuantity - fullyCompletedCount);
+      this.refreshCompletionMetrics(state, fullyCompletedCount);
 
-      if (fullyCompletedCount >= targetQuantity && targetQuantity > 1) {
+      if (fullyCompletedCount >= targetQuantity && targetQuantity > 0) {
         sendEvent({
           type: 'task.progress',
-          message: `Verified ${fullyCompletedCount}/${targetQuantity} after page inspection`,
+          message: `Verified ${fullyCompletedCount}/${targetQuantity} after official-page inspection`,
+          requestedQuantity: state.requestedQuantity,
+          verifiedQuantity: state.verifiedQuantity,
+          remaining: state.remaining,
         });
         state.status = 'COMPLETED';
         break;
       }
 
-      // EVALUATE STEP & DECIDE NEXT ACTION WITH LLM OR HEURISTIC PIPELINE
-      const nextDecision = await this.evaluateStepAndDecideNext({
+      // Discovery is a deterministic state machine. The LLM may still be used
+      // for non-discovery workflows, but it cannot choose the next search,
+      // invoke deep_web_research, or terminate a URL-inspection run.
+      const nextDecision = isDeterministicDiscoveryPlan(state.plan)
+        ? this.getDeterministicNextPipelineAction(state)
+        : await this.evaluateStepAndDecideNext({
         state,
         lastObservation: observation,
         providerId: activeProvider,
@@ -558,11 +642,14 @@ export class BrainDecisionEngine {
           type: 'message.completed',
           content: question,
         });
+        const waitingCompletion = this.getCompletionMetrics(state);
         sendEvent({
           type: 'task.completed',
           status: 'waiting_for_input',
           taskId,
           message: question,
+          ...waitingCompletion,
+          result: { ...waitingCompletion, completion: waitingCompletion },
         });
 
         return {
@@ -570,9 +657,11 @@ export class BrainDecisionEngine {
           finalAnswer: question,
           plan: state.plan,
           state,
-          verifiedCount: state.verifiedEntities.length,
+          verifiedCount: state.verifiedQuantity ?? state.verifiedCount ?? 0,
           totalFacts: state.extractedFacts.length,
           sourcesVerifiedCount: state.visitedUrls.size,
+          ...waitingCompletion,
+          completion: waitingCompletion,
         };
       }
 
@@ -607,6 +696,7 @@ export class BrainDecisionEngine {
     }
 
     // 3. GROUNDED FINAL SYNTHESIS
+    this.refreshCompletionMetrics(state);
     sendEvent({
       type: 'task.synthesizing',
       message: 'Compiling verified findings with source citations...',
@@ -631,6 +721,7 @@ export class BrainDecisionEngine {
 
     await taskCheckpointManager.saveCheckpoint(state, { lastProvider: activeProvider, lastModel: activeModel });
 
+    const completion = this.getCompletionMetrics(state);
     sendEvent({
       type: 'task.completed',
       taskId,
@@ -640,6 +731,8 @@ export class BrainDecisionEngine {
         verifiedEntities: state.verifiedEntities,
         factsCount: state.extractedFacts.length,
         sourcesCount: state.visitedUrls.size,
+        ...completion,
+        completion,
       },
     });
 
@@ -648,9 +741,11 @@ export class BrainDecisionEngine {
       finalAnswer,
       plan: state.plan,
       state,
-      verifiedCount: state.verifiedEntities.length,
+      verifiedCount: state.verifiedQuantity ?? state.verifiedCount ?? 0,
       totalFacts: state.extractedFacts.length,
       sourcesVerifiedCount: state.visitedUrls.size,
+      ...completion,
+      completion,
     };
   }
 
@@ -761,81 +856,218 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       timestamp: new Date().toISOString(),
     };
 
-    if (action.toolName === 'google_search') {
-      const items = Array.isArray(toolResult?.items) ? toolResult.items : [];
-      const candidates: CandidateTarget[] = items
-        .filter((it: any) => Boolean(it.link || it.url))
-        .map((it: any) => ({
-          url: it.link || it.url,
-          title: it.title || it.domain || 'Candidate Result',
-          snippet: it.snippet,
-          domain: it.domain,
-          relevanceScore: it.score || 0.9,
-        }));
+    if (action.toolName === 'search_web' || action.toolName === 'google_search') {
+      const attempt = typeof action.toolArgs?.attempt === 'number'
+        ? Math.max(0, Math.floor(action.toolArgs.attempt))
+        : state.searchAttempts || 0;
+      state.searchAttempts = Math.max(state.searchAttempts || 0, attempt + 1);
+
+      const query = typeof toolResult?.query === 'string' && toolResult.query.trim()
+        ? toolResult.query.trim()
+        : buildWebSearchQuery(action.toolArgs?.query || state.userPrompt, {
+            location: state.plan.location,
+          });
+      if (query && !state.queriesUsed?.includes(query)) {
+        state.queriesUsed?.push(query);
+      }
+
+      const rawItems = Array.isArray(toolResult?.items) ? toolResult.items : [];
+      const seenBatchDomains = new Set<string>();
+      const candidates: CandidateTarget[] = [];
+      for (const item of rawItems) {
+        const rawUrl = typeof item?.url === 'string' ? item.url : item?.link;
+        const title = typeof item?.title === 'string' ? item.title : '';
+        if (!rawUrl || isNonOfficialCandidateUrl(rawUrl, title)) continue;
+        const url = normalizeOfficialHomepage(rawUrl);
+        const domain = normalizedDomain(url);
+        if (!url || !domain || seenBatchDomains.has(domain)) continue;
+        if (state.discoveredCandidates.some((candidate) => normalizedDomain(candidate.url) === domain)) continue;
+        seenBatchDomains.add(domain);
+        candidates.push({
+          url,
+          title: title || domain,
+          domain,
+          relevanceScore: typeof item?.score === 'number' ? item.score : 0.9,
+          isDestination: true,
+          discoveryAttempt: attempt,
+          sourceEngine: item?.sourceEngine || toolResult?.engineUsed || toolResult?.providerUsed,
+        });
+      }
 
       observation.searchState = {
-        query: action.toolArgs?.query || '',
+        query,
         candidateUrls: candidates,
         totalResults: candidates.length,
       };
+      observation.extractedData = {
+        query,
+        attempt,
+        providerUsed: toolResult?.providerUsed,
+        engineUsed: toolResult?.engineUsed,
+        totalResults: candidates.length,
+        candidatesAreUrlsOnly: true,
+      };
 
-      // Add to discovered candidates (Search results are candidates, verified upon page inspection)
-      for (const cand of candidates) {
-        if (!state.discoveredCandidates.some((c) => c.url === cand.url)) {
-          state.discoveredCandidates.push(cand);
-        }
+      // Search results are only destinations. No entity, email, or fact is
+      // created until an official homepage is inspected.
+      for (const candidate of candidates) {
+        state.discoveredCandidates.push(candidate);
       }
 
-      // Anti-loop / anti-hallucination: track empty discovery searches. After
-      // two consecutive zero-result searches (and with no candidates already
-      // queued and nothing verified), mark discovery as exhausted so the loop
-      // terminates honestly instead of re-querying and inventing companies.
       if (candidates.length > 0) {
         state.consecutiveEmptySearches = 0;
         state.searchExhausted = false;
       } else {
         state.consecutiveEmptySearches = (state.consecutiveEmptySearches || 0) + 1;
-        if (
-          state.consecutiveEmptySearches >= 2 &&
-          state.discoveredCandidates.length === 0 &&
-          state.verifiedEntities.length === 0
-        ) {
-          state.searchExhausted = true;
-          opts.sendEvent({
-            type: 'task.progress',
-            message:
-              'Live search returned 0 results across multiple queries. No companies were invented. Reporting an honest empty result.',
-          });
-        }
+        if ((state.searchAttempts || 0) >= 3) state.searchExhausted = true;
       }
 
       opts.sendEvent({
         type: 'task.candidates_discovered',
-        query: action.toolArgs?.query || '',
+        query,
+        attempt,
+        provider: toolResult?.providerUsed || toolResult?.engineUsed || 'none',
         count: candidates.length,
         totalDiscovered: state.discoveredCandidates.length,
+        candidatesAreUrlsOnly: true,
         message:
           candidates.length > 0
-            ? `Discovered ${candidates.length} candidate URLs from search. Inspecting destination websites...`
-            : 'Live search returned 0 results. No companies were invented.',
+            ? `Discovered ${candidates.length} official candidate URL${candidates.length === 1 ? '' : 's'}; snippets are not verified facts.`
+            : 'Search returned no new official candidate URLs. No companies were invented.',
       });
     } else if (action.toolName === 'search_businesses') {
-      const businesses = Array.isArray(toolResult?.businesses) ? toolResult.businesses : [];
-      observation.extractedData = toolResult;
-      for (const b of businesses) {
-        if (b.website && !state.discoveredCandidates.some((c) => c.url === b.website)) {
-          state.discoveredCandidates.push({
-            url: b.website,
-            title: b.name,
-            snippet: `${b.address || ''} ${b.phone || ''}`.trim(),
-            relevanceScore: 0.9,
-          });
-        }
-      }
+      // Legacy checkpoints may still contain this action. Do not let it feed
+      // the new discovery state; new plans never advertise this tool.
+      observation.extractedData = { candidatesAreUrlsOnly: true, legacyResult: true };
     } else if (action.toolName === 'generate_proposal') {
       observation.extractedData = toolResult;
     } else if (action.toolName === 'send_email') {
       observation.extractedData = toolResult;
+    } else if (action.toolName === 'analyze_website') {
+      const pageUrl = normalizeOfficialHomepage(toolResult?.url || action.toolArgs?.url || '');
+      const candidate = state.discoveredCandidates.find((item) =>
+        normalizedDomain(item.url) === normalizedDomain(pageUrl)
+      );
+      const pageTitle = typeof toolResult?.pageTitle === 'string' ? toolResult.pageTitle : '';
+      const entityName = displayNameFromInspection(
+        /no title tag|inaccessible destination/i.test(pageTitle) ? '' : pageTitle,
+        candidate?.title || '',
+        pageUrl
+      );
+
+      if (pageUrl) {
+        state.visitedUrls.add(pageUrl);
+        const domain = normalizedDomain(pageUrl);
+        if (domain) state.visitedDomains.add(domain);
+      }
+      observation.extractedData = toolResult;
+
+      if (toolResult?.success && pageUrl && entityName) {
+        let entity = state.verifiedEntities.find((item) => normalizedDomain(item.url || '') === normalizedDomain(pageUrl));
+        if (!entity) {
+          entity = {
+            id: `ent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+            name: entityName,
+            url: pageUrl,
+            website: pageUrl,
+            hasWebsite: true,
+            websiteStatus: 'WEBSITE_FOUND',
+            pageInspected: true,
+            verificationStatus: 'VERIFIED',
+            verificationReason: 'Official homepage inspected by analyze_website',
+            verifiedAt: new Date().toISOString(),
+            status: 'VERIFIED',
+            sources: [],
+            facts: [],
+            actionRecords: [],
+          };
+          state.verifiedEntities.push(entity);
+        } else {
+          entity.pageInspected = true;
+          entity.status = entity.status === 'REJECTED' ? entity.status : 'VERIFIED';
+          entity.verificationStatus = 'VERIFIED';
+          entity.url = pageUrl;
+          entity.website = pageUrl;
+          entity.hasWebsite = true;
+          entity.websiteStatus = 'WEBSITE_FOUND';
+        }
+
+        const sourceTitle = pageTitle || entityName;
+        const facts: GroundedFact[] = [];
+        const addFact = (field: string, value: string, quote: string) => {
+          const checked = evidenceProvenanceEngine.validateFactEvidence(
+            {
+              field,
+              extractedValue: value,
+              sourceUrl: pageUrl,
+              sourceDomain: normalizedDomain(pageUrl),
+              sourceTitle,
+              sourceType: 'PRIMARY',
+              extractedAt: new Date().toISOString(),
+              confidence: field === 'email' ? 0.98 : 0.9,
+              evidenceQuote: quote,
+              entityId: entity!.id,
+              entityName: entity!.name,
+            },
+            quote,
+            pageUrl
+          );
+          if (checked.verified) facts.push(checked.groundedFact);
+        };
+
+        const emails: string[] = Array.isArray(toolResult?.contactEmails)
+          ? toolResult.contactEmails.filter((value: any): value is string => typeof value === 'string')
+          : typeof toolResult?.primaryEmail === 'string'
+          ? [toolResult.primaryEmail]
+          : [];
+        const phones: string[] = Array.isArray(toolResult?.phoneNumbers)
+          ? toolResult.phoneNumbers.filter((value: any): value is string => typeof value === 'string')
+          : [];
+        const founders: any[] = Array.isArray(toolResult?.decisionMakers)
+          ? toolResult.decisionMakers
+          : Array.isArray(toolResult?.founders)
+          ? toolResult.founders
+          : [];
+
+        for (const email of [...new Set(emails)].slice(0, 3)) {
+          addFact('email', email.toLowerCase(), `Public contact email on official homepage: ${email.toLowerCase()}`);
+        }
+        for (const phone of [...new Set(phones)].slice(0, 2)) {
+          addFact('phone', phone, `Public phone on official homepage: ${phone}`);
+        }
+        for (const founder of founders.slice(0, 3)) {
+          const name = typeof founder === 'string' ? founder : founder?.name;
+          const title = typeof founder === 'string' ? 'Decision maker / Founder' : founder?.title || 'Decision maker / Founder';
+          if (typeof name === 'string' && name.trim()) {
+            const value = `${name.trim()} (${title})`;
+            addFact('decision_maker', value, `Leadership listed on official homepage: ${value}`);
+          }
+        }
+
+        if (Array.isArray(toolResult?.servicesFound) && toolResult.servicesFound.length > 0) {
+          const services = toolResult.servicesFound.filter((value: any) => typeof value === 'string').slice(0, 6).join(', ');
+          if (services) addFact('services', services, `Services or offerings listed on official homepage: ${services}`);
+          entity.services = services || entity.services;
+        }
+
+        entity.facts = [...(entity.facts || []), ...facts];
+        const emailFact = facts.find((fact) => fact.field === 'email');
+        if (emailFact) {
+          entity.email = emailFact.extractedValue;
+          entity.emailStatus = 'VERIFIED';
+          entity.emailSourceUrl = pageUrl;
+          entity.emailEvidence = emailFact.evidenceQuote || emailFact.evidenceText;
+          entity.emailConfidence = emailFact.confidence;
+        } else if (state.plan.requestedFields.includes('email') || state.plan.emailActionsRequired) {
+          entity.email = null;
+          entity.emailStatus = 'NOT_FOUND';
+          entity.emailSourceUrl = pageUrl;
+          entity.emailEvidence = 'No public email found in the inspected official homepage.';
+        }
+        const founderFact = facts.find((fact) => fact.field === 'decision_maker');
+        if (founderFact) entity.description = founderFact.extractedValue;
+        observation.extractedFacts.push(...facts);
+      }
     } else if (action.toolName === 'browser_navigate' || action.toolName === 'browser_extract_content') {
       const pageUrl = toolResult?.url || action.toolArgs?.url;
       const pageTitle = toolResult?.title || '';
@@ -1223,6 +1455,37 @@ Generate the strict JSON BrainTaskPlan for this request.`;
     }
   }
 
+  private getCompletionMetrics(state: BrainTaskState) {
+    ensureStateCollections(state);
+    return {
+      requestedQuantity: state.requestedQuantity ?? state.plan.quantity ?? 1,
+      verifiedQuantity: state.verifiedQuantity ?? state.verifiedCount ?? 0,
+      remaining: state.remaining ?? state.remainingQuantity ?? 0,
+      searchAttempts: state.searchAttempts ?? 0,
+      queriesUsed: [...(state.queriesUsed || [])],
+      visitedUrls: Array.from(state.visitedUrls),
+    };
+  }
+
+  private refreshCompletionMetrics(state: BrainTaskState, verifiedQuantity?: number): void {
+    ensureStateCollections(state);
+    const verified = typeof verifiedQuantity === 'number'
+      ? verifiedQuantity
+      : this.countFullyCompletedEntities(state);
+    const requested = state.plan.quantity || state.requestedQuantity || 1;
+    state.requestedQuantity = requested;
+    state.verifiedQuantity = verified;
+    state.verifiedCount = verified;
+    state.requiredQuantity = requested;
+    state.remaining = Math.max(0, requested - verified);
+    state.remainingQuantity = state.remaining;
+    state.remainingCount = state.remaining;
+    state.requestedCount = requested;
+    state.discoveredCount = state.discoveredCandidates.length;
+    state.qualifiedCount = state.verifiedEntities.filter((entity) => entity.status !== 'REJECTED').length;
+    state.unverifiedCount = state.remaining;
+  }
+
   /**
    * Counts entities that have completed ALL required pipeline stages and satisfied all constraints.
    */
@@ -1261,12 +1524,15 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         return false;
       }
 
-     const shouldSend = Boolean(
+      // A requested send is not complete until it is actually sent, explicitly
+      // declined, or there is no verified recipient to send to. This keeps the
+      // confirmation gate reachable when auto-send is off.
+      const sendStillRequired = Boolean(
         plan.emailActionsRequired &&
-          state.gmailConnected &&
-          (state.autoSendProposals || state.emailConfirmationGranted)
+        ent.email &&
+        !state.emailConfirmationDeclined
       );
-      if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError && ent.status !== 'PROCESSED') {
+      if (sendStillRequired && !ent.emailSent && !ent.emailSendError && ent.status !== 'PROCESSED') {
         return false;
       }
 
@@ -1465,7 +1731,12 @@ Generate the strict JSON BrainTaskPlan for this request.`;
 
         // Link email/phone facts to active entities if relevant
         if (f.field === 'email' && f.extractedValue) {
-          const matchingEntity = state.verifiedEntities.find((e) => !e.email && (f.pageTitle.toLowerCase().includes(e.name.toLowerCase()) || e.name.toLowerCase().includes(f.pageTitle.toLowerCase())));
+          const factTitle = (f.pageTitle || f.sourceTitle || f.entityName || '').toLowerCase();
+          const matchingEntity = state.verifiedEntities.find((e) =>
+            !e.email &&
+            (f.entityId === e.id ||
+              (factTitle && (factTitle.includes(e.name.toLowerCase()) || e.name.toLowerCase().includes(factTitle))))
+          );
           if (matchingEntity) {
             matchingEntity.email = f.extractedValue;
             matchingEntity.emailStatus = 'VERIFIED';
@@ -1601,9 +1872,156 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
   }
 
   /**
+   * Deterministic discovery state machine:
+   * search attempt 0 → inspect official homepages → search attempt 1 →
+   * inspect → search attempt 2 → inspect → report. The LLM cannot skip or
+   * terminate these transitions.
+   */
+  private getDeterministicDiscoveryAction(state: BrainTaskState): BrainActionDecision {
+    ensureStateCollections(state);
+    const requestedQuantity = state.plan.quantity || 1;
+    const verifiedQuantity = this.countFullyCompletedEntities(state);
+    this.refreshCompletionMetrics(state, verifiedQuantity);
+    const qualifiedCandidates = state.verifiedEntities.filter((entity) => entity.status !== 'REJECTED');
+
+    // Optional proposal/outreach stages still use the same state machine. The
+    // permission gate is checked before any send action is returned.
+    if ((state.plan.emailActionsRequired || state.autoSendProposals) && !state.emailConfirmationDeclined) {
+      const readyToSend = qualifiedCandidates.filter(
+        (entity) => entity.proposalMarkdown && entity.email && !entity.emailSent && !entity.emailSendError
+      );
+      if (readyToSend.length > 0) {
+        if (!state.gmailConnected) {
+          state.awaitingEmailConfirmation = false;
+          return {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Gmail is not connected; keep prepared outreach as drafts.',
+            clarificationQuestion: `I verified ${qualifiedCandidates.length} lead${qualifiedCandidates.length === 1 ? '' : 's'} and prepared ${readyToSend.length} email draft${readyToSend.length === 1 ? '' : 's'}, but Gmail is not connected. Connect Gmail before sending.`,
+            expectedObservation: 'User connects Gmail or continues without sending',
+          };
+        }
+        if (!state.autoSendProposals && !state.emailConfirmationGranted) {
+          state.awaitingEmailConfirmation = true;
+          return {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Prepared outreach requires explicit user confirmation.',
+            clarificationQuestion: `I prepared ${readyToSend.length} outreach email${readyToSend.length === 1 ? '' : 's'} from verified official-page data. Do you want me to send them from your connected Gmail?`,
+            expectedObservation: 'Explicit user send confirmation',
+          };
+        }
+        const sendTarget = readyToSend[0];
+        return {
+          type: 'execute_tool',
+          toolName: 'send_email',
+          toolArgs: {
+            to: sendTarget.email,
+            businessName: sendTarget.name,
+            subject: sendTarget.proposalSubject || `Digital Growth Strategy for ${sendTarget.name}`,
+            body: sendTarget.proposalMarkdown,
+          },
+          rationale: `Dispatching the confirmed outreach draft for ${sendTarget.name}`,
+          expectedObservation: 'Provider message ID confirming delivery',
+        };
+      }
+    }
+
+    if (state.plan.proposalRequired) {
+      const candidateForProposal = qualifiedCandidates.find(
+        (entity) => !entity.proposalMarkdown && (!state.plan.emailActionsRequired || Boolean(entity.email))
+      );
+      if (candidateForProposal) {
+        return {
+          type: 'execute_tool',
+          toolName: 'generate_proposal',
+          toolArgs: {
+            businessName: candidateForProposal.name,
+            businessType: candidateForProposal.services || 'Company',
+            location: state.plan.location || '',
+            websiteUrl: candidateForProposal.website || candidateForProposal.url || '',
+            weakness: candidateForProposal.description || 'Verified official-page opportunity',
+          },
+          rationale: `Drafting a proposal from verified findings for ${candidateForProposal.name}`,
+          expectedObservation: 'Grounded proposal draft',
+        };
+      }
+    }
+
+    if (verifiedQuantity >= requestedQuantity) {
+      return {
+        type: 'complete',
+        toolName: '',
+        toolArgs: {},
+        rationale: `Backend completion reached: ${verifiedQuantity}/${requestedQuantity} official pages verified.`,
+        expectedObservation: 'Final findings table',
+      };
+    }
+
+    const latestAttempt = Math.max(0, (state.searchAttempts || 0) - 1);
+    const latestBatch = state.discoveredCandidates.filter(
+      (candidate) => (candidate.discoveryAttempt ?? latestAttempt) === latestAttempt
+    );
+    const inspectionCap = Math.min(requestedQuantity, 12);
+    const inspectedInBatch = latestBatch.filter((candidate) =>
+      state.visitedUrls.has(candidate.url) ||
+      (candidate.domain ? state.visitedDomains.has(candidate.domain) : false)
+    ).length;
+
+    if (inspectedInBatch < inspectionCap) {
+      const nextCandidate = pickUnvisitedOfficialCandidate(
+        latestBatch,
+        state.visitedUrls,
+        state.visitedDomains
+      );
+      if (nextCandidate) {
+        return {
+          type: 'execute_tool',
+          toolName: 'analyze_website',
+          toolArgs: { url: normalizeOfficialHomepage(nextCandidate.url) },
+          rationale: `Inspecting official homepage ${inspectedInBatch + 1}/${inspectionCap}: ${nextCandidate.title || nextCandidate.domain}`,
+          expectedObservation: 'Official-page facts, decision maker, public email, and source evidence',
+        };
+      }
+    }
+
+    if ((state.searchAttempts || 0) < 3) {
+      const query = buildWebSearchQuery(state.userPrompt, {
+        location: state.plan.location,
+      });
+      return {
+        type: 'execute_tool',
+        toolName: 'search_web',
+        toolArgs: {
+          query,
+          location: state.plan.location,
+          limit: Math.min(Math.max(requestedQuantity, 10), 30),
+          attempt: state.searchAttempts || 0,
+        },
+        rationale: `Searching attempt ${(state.searchAttempts || 0) + 1}/3 for more official candidates (${verifiedQuantity}/${requestedQuantity} verified)`,
+        expectedObservation: 'Additional official homepage URLs',
+      };
+    }
+
+    return {
+      type: 'complete',
+      toolName: '',
+      toolArgs: {},
+      rationale: `Bounded discovery finished after ${state.searchAttempts || 0} searches. Verified ${verifiedQuantity}/${requestedQuantity}; report only verified findings.`,
+      expectedObservation: 'Honest partial findings table',
+    };
+  }
+
+  /**
    * Deterministic pipeline router ensuring every required multi-step stage is executed for every entity.
    */
   private getDeterministicNextPipelineAction(state: BrainTaskState): BrainActionDecision {
+    if (isDeterministicDiscoveryPlan(state.plan)) {
+      return this.getDeterministicDiscoveryAction(state);
+    }
+
     const plan = state.plan;
     const qualifiedCandidates = state.verifiedEntities.filter((e) => e.status !== 'REJECTED');
     const fullyCompletedCount = this.countFullyCompletedEntities(state);
@@ -1826,6 +2244,13 @@ Formulate an adjusted BrainTaskPlan with alternative search queries or direct br
     const { prompt, state } = opts;
 
     const structuredReport = evidenceProvenanceEngine.formatStructuredEvidenceReport(state);
+
+    // Discovery reports are rendered from backend evidence, not regenerated by
+    // an LLM. This guarantees the Result table, honest counts, and Not found
+    // values survive even when a model says "Task completed" early.
+    if (isDeterministicDiscoveryPlan(state.plan)) {
+      return structuredReport;
+    }
 
     const evidenceText = state.evidence
       .slice(0, 25)

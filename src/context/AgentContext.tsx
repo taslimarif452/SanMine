@@ -1326,11 +1326,12 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               // Handle event types
               const humanToolLabel = (tool?: string) => {
                 const map: Record<string, string> = {
+                  search_web: 'Searching the web',
                   google_search: 'Searching the web',
                   search_businesses: 'Searching listings',
                   browser_navigate: 'Opening page',
                   browser_extract_content: 'Extracting page content',
-                  analyze_website: 'Inspecting website',
+                  analyze_website: 'Inspecting official website',
                   deep_web_research: 'Researching sources',
                   generate_proposal: 'Drafting proposal',
                   send_email: 'Sending email',

@@ -179,6 +179,9 @@ export interface CandidateTarget {
   relevanceScore?: number;
   isInspected?: boolean;
   isDestination?: boolean;
+  /** Search attempt that produced this URL (0 Tavily, 1 Serper, 2+ HTML). */
+  discoveryAttempt?: number;
+  sourceEngine?: string;
 }
 
 export interface BrainObservation {
@@ -272,6 +275,12 @@ export interface BrainTaskState {
   contactedCount?: number;
   sentCount?: number;
   remainingQuantity?: number;
+  /** Backend-owned completion accounting for bounded web discovery. */
+  requestedQuantity?: number;
+  verifiedQuantity?: number;
+  remaining?: number;
+  searchAttempts?: number;
+  queriesUsed?: string[];
   autoSendProposals?: boolean;
   gmailConnected?: boolean;
   /**
@@ -325,4 +334,18 @@ export interface UniversalBrainRunResult {
   verifiedCount: number;
   totalFacts: number;
   sourcesVerifiedCount: number;
+  completion?: {
+    requestedQuantity: number;
+    verifiedQuantity: number;
+    remaining: number;
+    searchAttempts: number;
+    queriesUsed: string[];
+    visitedUrls: string[];
+  };
+  requestedQuantity?: number;
+  verifiedQuantity?: number;
+  remaining?: number;
+  searchAttempts?: number;
+  queriesUsed?: string[];
+  visitedUrls?: string[];
 }

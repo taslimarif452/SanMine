@@ -1,5 +1,14 @@
 import { searchRegistry } from './search/registry.js';
-import { conductWebResearch, fetchWebPage, performGoogleWebSearch, executeGenericWebResearch } from './research/index.js';
+import {
+  conductWebResearch,
+  fetchWebPage,
+  executeGenericWebResearch,
+  searchWeb,
+  buildWebSearchQuery,
+  extractFoundersFromText,
+  hasTavilyKey,
+  hasSerperKey,
+} from './research/index.js';
 import { browserTools } from './browser/index.js';
 import { sendGmailMessage } from './gmail/oauth.js';
 import { sendGmailSmtpMessage } from './gmail/smtp.js';
@@ -203,6 +212,13 @@ const analyzeWebsiteTool: AgentTool = {
       const imgTags = htmlText.match(/<img[^>]*>/gi) || [];
       const imgMissingAlt = imgTags.filter((tag) => !/alt=["'][^"']+["']/i.test(tag)).length;
       const pageSizeKb = Math.round(Buffer.byteLength(htmlText, 'utf-8') / 1024);
+      const founderSourceText = htmlText
+        .replace(/<script\b[^<]*(?:(?!<\/script>)[\s\S])*<\/script>/gi, ' ')
+        .replace(/<style\b[^<]*(?:(?!<\/style>)[\s\S])*<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const founders = extractFoundersFromText(founderSourceText, targetUrl).slice(0, 4);
 
       // Extract headings
       const h1Matches = Array.from(htmlText.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)).map((m) => m[1].replace(/<[^>]+>/g, '').trim()).filter(Boolean);
@@ -344,6 +360,8 @@ const analyzeWebsiteTool: AgentTool = {
         pageSizeKb,
         contactEmails,
         primaryEmail,
+        founders,
+        decisionMakers: founders,
         issuesFoundCount: issues.length,
         identifiedIssues: issues,
         healthRating: issues.length === 0 ? 'Excellent' : issues.length <= 2 ? 'Fair' : 'Poor',
@@ -672,16 +690,19 @@ const systemStatusTool: AgentTool = {
     });
 
     const checkType = input?.checkType || 'overview';
-    const activeSearch = searchRegistry.getActiveProvider();
+    const visibleSearchConfigured = hasTavilyKey() || hasSerperKey();
+    const visibleTools = Array.from(toolRegistry.keys()).filter(
+      (name) => name !== 'deep_web_research' && name !== 'search_businesses' && name !== 'google_search'
+    );
 
     const status = {
       runtime: 'SanMine Space Autonomous AI Orchestrator',
       status: 'operational',
-      availableBackendTools: Array.from(toolRegistry.keys()),
+      availableBackendTools: visibleTools,
       searchProvider: {
-        active: activeSearch.name,
-        id: activeSearch.id,
-        isConfigured: activeSearch.isConfigured(),
+        active: 'Deterministic Search Router',
+        id: 'search_web',
+        isConfigured: visibleSearchConfigured,
       },
       checkType,
       timestamp: new Date().toISOString(),
@@ -690,7 +711,7 @@ const systemStatusTool: AgentTool = {
     emitEvent?.({
       type: 'tool.completed',
       tool: 'get_system_status',
-      message: `System operational. Search provider: ${activeSearch.name} (${activeSearch.isConfigured() ? 'Connected' : 'Unconfigured'})`,
+      message: `System operational. Search router: ${visibleSearchConfigured ? 'Tavily / Serper configured' : 'no official API key configured'}`,
     });
 
     return status;
@@ -746,62 +767,110 @@ const dateTimeTool: AgentTool = {
 };
 
 /**
- * Google Search Discovery Tool
+ * Canonical web search tool. Provider selection is strictly backend-owned by
+ * `attempt`; the model never chooses Tavily, Serper, or HTML scraping.
  */
-const googleSearchTool: AgentTool = {
-  name: 'google_search',
+const searchWebTool: AgentTool = {
+  name: 'search_web',
   description:
-    'Searches Google / Web search index for verified live web pages, company official domains, social media profiles, and directory listings.',
+    'Searches the web for candidate official company homepages. Attempt 0 uses Tavily, attempt 1 uses Serper, and later attempts use free HTML search. Results are URLs to inspect; snippets are not verified facts.',
   parameters: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'The search query or keyword (e.g. "Srinagar bakeries", "Zapier founder email", "site:instagram.com fashion store Srinagar").',
+        description: 'Short subject query such as "SaaS companies Delhi". Do not include the full task instruction.',
       },
       location: {
         type: 'string',
-        description: 'Optional location filter.',
+        description: 'Optional geographic location used to normalize the search query.',
       },
       limit: {
         type: 'number',
-        description: 'Number of results to return (default 10, max 20).',
+        description: 'Maximum candidate URLs to return (default 10, max 30).',
+      },
+      attempt: {
+        type: 'number',
+        description: 'Backend retry attempt: 0 Tavily, 1 Serper, 2 or later free HTML search. The agent should normally omit this.',
       },
     },
     required: ['query'],
   },
   execute: async (input, emitEvent) => {
-    const query = input?.query || '';
-    const location = input?.location || '';
-    const limit = input?.limit || 10;
+    const rawQuery = typeof input?.query === 'string' ? input.query : '';
+    const location = typeof input?.location === 'string' ? input.location : '';
+    const limit = typeof input?.limit === 'number' ? input.limit : 10;
+    const attempt = typeof input?.attempt === 'number' ? Math.max(0, Math.floor(input.attempt)) : 0;
+    const normalizedQuery = buildWebSearchQuery(rawQuery, { location });
+    const routeLabel = attempt === 0 ? 'tavily' : attempt === 1 ? 'serper' : 'free HTML';
 
     emitEvent?.({
       type: 'tool.started',
-      tool: 'google_search',
-      message: `Searching Google for "${query}"${location ? ` in ${location}` : ''}...`,
+      tool: 'search_web',
+      message: `Searching the web for "${normalizedQuery}" → via ${routeLabel}`,
+      detail: `Attempt ${attempt}; candidate URLs only. Search snippets are not verified facts.`,
+      query: normalizedQuery,
+      attempt,
+      provider: routeLabel,
     });
 
-    const result = await performGoogleWebSearch(query, {
-      limit,
-      locationFilter: location,
-    });
+    try {
+      const result = await searchWeb(rawQuery, {
+        attempt,
+        location,
+        limit,
+      });
 
-    if (result.items.length > 0) {
       emitEvent?.({
         type: 'tool.completed',
-        tool: 'google_search',
-        message: `Found ${result.items.length} relevant results via ${result.engineUsed}`,
+        tool: 'search_web',
+        message: result.items.length > 0
+          ? `Found ${result.items.length} official candidate URL${result.items.length === 1 ? '' : 's'} via ${result.engineUsed}`
+          : `No official candidate URLs found via ${routeLabel}; no companies were invented`,
+        detail: `Query: ${result.query} · Attempt ${attempt}`,
+        query: result.query,
+        attempt,
+        provider: result.providerUsed,
+        resultCount: result.items.length,
       });
-    } else {
+
+      return result;
+    } catch (err: any) {
       emitEvent?.({
-        type: 'tool.completed',
-        tool: 'google_search',
-        message: 'Live search returned 0 results. No companies were invented.',
+        type: 'tool.failed',
+        tool: 'search_web',
+        message: `Web search attempt ${attempt} failed via ${routeLabel}`,
+        detail: err?.message || 'Unknown search error',
+        query: normalizedQuery,
+        attempt,
+        provider: routeLabel,
       });
+      return {
+        success: false,
+        query: normalizedQuery,
+        items: [],
+        totalResults: 0,
+        engineUsed: 'none',
+        providerUsed: attempt === 0 ? 'tavily' : attempt === 1 ? 'serper' : 'html',
+        attempt,
+        providersAttempted: [],
+        attemptedEngines: [],
+        hasProviderKey: false,
+        candidatesAreUrlsOnly: true,
+        error: err?.message || 'Search failed',
+      };
     }
-
-    return result;
   },
+};
+
+/**
+ * Backwards-compatible alias. It uses the exact same router and is not
+ * advertised to the brain, so legacy callers cannot select a provider.
+ */
+const googleSearchTool: AgentTool = {
+  ...searchWebTool,
+  name: 'google_search',
+  description: 'Alias for search_web. Provider selection remains backend-controlled.',
 };
 
 /**
@@ -1082,6 +1151,7 @@ toolRegistry.set(calculateLeadScoreTool.name, calculateLeadScoreTool);
 toolRegistry.set(generateProposalTool.name, generateProposalTool);
 toolRegistry.set(systemStatusTool.name, systemStatusTool);
 toolRegistry.set(dateTimeTool.name, dateTimeTool);
+toolRegistry.set(searchWebTool.name, searchWebTool);
 toolRegistry.set(googleSearchTool.name, googleSearchTool);
 toolRegistry.set(deepWebResearchTool.name, deepWebResearchTool);
 toolRegistry.set(researchSocialTool.name, researchSocialTool);
@@ -1094,8 +1164,34 @@ export function getRegisteredTools(): AgentTool[] {
   return Array.from(toolRegistry.values());
 }
 
+const AGENT_VISIBLE_TOOL_NAMES = new Set([
+  'search_web',
+  'browser_navigate',
+  'browser_click',
+  'browser_type',
+  'browser_press',
+  'browser_scroll',
+  'browser_screenshot',
+  'browser_extract_content',
+  'browser_go_back',
+  'browser_go_forward',
+  'browser_reload',
+  'browser_session_status',
+  'browser_close',
+  'analyze_website',
+  'calculate_lead_score',
+  'generate_proposal',
+  'get_system_status',
+  'get_current_datetime',
+  'send_email',
+]);
+
+export function getAgentVisibleTools(): AgentTool[] {
+  return getRegisteredTools().filter((tool) => AGENT_VISIBLE_TOOL_NAMES.has(tool.name));
+}
+
 export function getOpenRouterToolDefinitions() {
-  return getRegisteredTools().map((t) => ({
+  return getAgentVisibleTools().map((t) => ({
     type: 'function' as const,
     function: {
       name: t.name,
@@ -1110,7 +1206,7 @@ export function getOpenAIToolDefinitions() {
 }
 
 export function getGeminiToolDeclarations() {
-  return getRegisteredTools().map((t) => ({
+  return getAgentVisibleTools().map((t) => ({
     name: t.name,
     description: t.description,
     parameters: {

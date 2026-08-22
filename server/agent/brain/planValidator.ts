@@ -8,6 +8,7 @@ import { BrainTaskPlan, BrainActionDecision, UserIntentType, ActionDecisionType 
 import { isToolRegistered, BRAIN_AVAILABLE_TOOLS } from './toolSchemas.js';
 import { extractLocationCandidate, extractLocationFromHistory } from '../../agent.js';
 import { parseWorkGoal } from '../workIntent.js';
+import { buildWebSearchQuery } from '../../research/searchQuery.js';
 
 export class PlanValidator {
   /**
@@ -57,6 +58,18 @@ export class PlanValidator {
       }
     }
 
+    // Deterministic routing owns discovery intent. The LLM may describe the
+    // goal, but it cannot turn a discovery job into a direct answer or choose
+    // a search provider/tool.
+    const hasDirectUrl = /https?:\/\/[^\s]+|www\.[^\s]+/i.test(prompt);
+    if (workGoal.isWorkTask) {
+      userIntent = hasDirectUrl && !/\b(find|search|discover|list|companies|businesses|startups|saas)\b/i.test(prompt)
+        ? 'WEBSITE_INSPECTION'
+        : 'DISCOVERY_AND_EXTRACTION';
+    } else if (!hasDirectUrl && userIntent === 'GENERAL_REASONING') {
+      userIntent = 'DIRECT_CHAT';
+    }
+
     const entities: string[] = Array.isArray(raw.entities)
       ? raw.entities.filter((e: any) => typeof e === 'string' && e.trim()).map((e: string) => e.trim())
       : [];
@@ -75,6 +88,10 @@ export class PlanValidator {
         if (parsed > 0 && parsed <= 50) quantity = parsed;
       }
     }
+    // The user's explicit quantity is authoritative over a model-produced
+    // default. This prevents an LLM plan with quantity=1 from ending a
+    // twenty-item job after its first page.
+    if (workGoal.quantity > 1) quantity = Math.min(workGoal.quantity, 50);
 
     // Auto-detect requested fields from prompt if not supplied
     const lowerP = prompt.toLowerCase();
@@ -139,7 +156,7 @@ export class PlanValidator {
       ? raw.sourcePreference
       : 'auto';
 
-    const discoveryStrategy = ['search_first', 'direct_url', 'multi_page_crawl', 'direct_chat'].includes(raw.discoveryStrategy)
+    let discoveryStrategy = ['search_first', 'direct_url', 'multi_page_crawl', 'direct_chat'].includes(raw.discoveryStrategy)
       ? raw.discoveryStrategy
       : 'search_first';
 
@@ -147,7 +164,7 @@ export class PlanValidator {
       ? raw.browserRequired
       : userIntent !== 'DIRECT_CHAT' && userIntent !== 'SYSTEM_DIAGNOSTIC';
 
-    const toolsRequired: string[] = Array.isArray(raw.toolsRequired)
+    let toolsRequired: string[] = Array.isArray(raw.toolsRequired)
       ? raw.toolsRequired.filter((t: any) => typeof t === 'string' && isToolRegistered(t))
       : [];
 
@@ -173,18 +190,38 @@ export class PlanValidator {
 
     let nextAction = this.validateAndRepairAction(raw.nextAction, prompt, userIntent, resolvedLocation);
 
-    if (
-      (nextAction.toolName === 'google_search' || nextAction.toolName === 'search_businesses') &&
-      !nextAction.toolArgs.limit
-    ) {
+    const isSearchDiscovery = workGoal.isWorkTask && !hasDirectUrl && userIntent !== 'DIRECT_CHAT';
+    if (isSearchDiscovery) {
+      // Discovery plans expose one search primitive. Provider choice and retry
+      // sequencing are owned by BrainDecisionEngine, never by the LLM.
+      discoveryStrategy = 'search_first';
+      toolsRequired = ['search_web', 'analyze_website'];
+      if (proposalRequired) toolsRequired.push('generate_proposal');
+      if (emailActionsRequired) toolsRequired.push('send_email');
+      nextAction = {
+        type: 'execute_tool',
+        toolName: 'search_web',
+        toolArgs: {
+          query: buildWebSearchQuery(prompt, { location: resolvedLocation, industry: workGoal.industry }),
+          location: resolvedLocation,
+          limit: Math.min(Math.max(quantity, 10), 30),
+          attempt: 0,
+        },
+        rationale: 'Start deterministic web discovery with the normalized subject query',
+        expectedObservation: 'Candidate official homepage URLs; snippets are not facts',
+      };
+    } else if (nextAction.toolName === 'google_search' || nextAction.toolName === 'search_businesses') {
+      nextAction.toolName = 'search_web';
+    }
+
+    if (nextAction.toolName === 'search_web' && !nextAction.toolArgs.limit) {
       nextAction.toolArgs.limit = Math.min(Math.max(quantity, 10), 30);
     }
-    if (
-      (nextAction.toolName === 'google_search' || nextAction.toolName === 'search_businesses') &&
-      workGoal.searchQuery &&
-      (!nextAction.toolArgs.query || nextAction.toolArgs.query === prompt.slice(0, 120))
-    ) {
-      nextAction.toolArgs.query = workGoal.searchQuery;
+    if (nextAction.toolName === 'search_web') {
+      nextAction.toolArgs.query = buildWebSearchQuery(
+        typeof nextAction.toolArgs.query === 'string' ? nextAction.toolArgs.query : prompt,
+        { location: resolvedLocation, industry: workGoal.industry }
+      );
     }
 
     // Check if missing required location for local business discovery
@@ -258,15 +295,23 @@ export class PlanValidator {
     const type: ActionDecisionType = validTypes.includes(raw.type) ? raw.type : 'execute_tool';
 
     let toolName = typeof raw.toolName === 'string' ? raw.toolName.trim() : '';
+    // Keep old checkpoints readable, but collapse all discovery actions onto
+    // the single canonical search_web router. Deep research is not a second
+    // discovery path in the brain.
+    if (toolName === 'google_search' || toolName === 'search_businesses') {
+      toolName = 'search_web';
+    } else if (toolName === 'deep_web_research') {
+      toolName = /https?:\/\/[^\s]+|www\.[^\s]+/i.test(prompt) ? 'analyze_website' : 'search_web';
+    }
     if (type === 'execute_tool' && (!toolName || !isToolRegistered(toolName))) {
       // Choose best fitting tool
       if (intent === 'SYSTEM_DIAGNOSTIC') {
         toolName = 'get_system_status';
       } else if (intent === 'WEBSITE_INSPECTION') {
         const urlMatch = prompt.match(/https?:\/\/[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|in|co|ai)[^\s]*/i);
-        toolName = urlMatch ? 'browser_navigate' : 'google_search';
+        toolName = urlMatch ? 'browser_navigate' : 'search_web';
       } else {
-        toolName = 'google_search';
+        toolName = 'search_web';
       }
     }
 
@@ -297,10 +342,11 @@ export class PlanValidator {
    * Sanitizes tool arguments to ensure type safety and prevent missing required keys.
    */
   static sanitizeToolArgs(toolName: string, args: Record<string, any>, prompt: string, defaultLocation?: string) {
-    if (toolName === 'google_search') {
-      if (!args.query || typeof args.query !== 'string') {
-        args.query = prompt.slice(0, 120);
-      }
+    if (toolName === 'google_search' || toolName === 'search_businesses' || toolName === 'search_web') {
+      args.query = buildWebSearchQuery(
+        typeof args.query === 'string' ? args.query : prompt,
+        { location: typeof args.location === 'string' ? args.location : defaultLocation }
+      );
       if (!args.location && defaultLocation) {
         args.location = defaultLocation;
       }
@@ -334,34 +380,26 @@ export class PlanValidator {
     defaultLocation?: string,
     conversationHistory?: Array<{ role: string; content: string }>
   ): BrainTaskPlan {
-    const isChat = /^(hi|hello|hey|help|who are you|what can you do)\b/i.test(prompt.trim());
-    const hasUrl = /https?:\/\/[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|in|co|ai)[^\s]*/i.test(prompt);
+    const workGoal = parseWorkGoal(prompt, defaultLocation);
+    const hasUrl = /https?:\/\/[^\s]+|www\.[^\s]+/i.test(prompt);
     const hasProfile = /instagram|linkedin|twitter|profile|bio|handle/i.test(prompt);
+    const lowerP = prompt.toLowerCase();
+    const isChat = !workGoal.isWorkTask && !hasUrl && !hasProfile;
 
     let userIntent: UserIntentType = 'DISCOVERY_AND_EXTRACTION';
-    if (isChat) {
-      userIntent = 'DIRECT_CHAT';
-    } else if (hasUrl) {
+    if (isChat) userIntent = 'DIRECT_CHAT';
+    else if (hasUrl && !/\b(find|search|discover|list|companies|businesses|startups|saas)\b/i.test(prompt)) {
       userIntent = 'WEBSITE_INSPECTION';
-    } else if (hasProfile) {
+    } else if (hasProfile && !workGoal.isWorkTask) {
       userIntent = 'PROFILE_RESEARCH';
     }
 
-    let quantity = 1;
-    const qMatch = prompt.match(/\b(\d{1,2})\s*(?:[a-zA-Z_-]+\s+){0,2}(?:companies|leads|businesses|stores|profiles|bakeries|items|results|startups|gyms|restaurants|cafes|dentists|salons|plumbers|websites|tools|apps|agencies|clinics|hotels|entities|shops|accounts)\b/i) ||
-      prompt.match(/\b(?:find|search|get|discover|inspect|list|collect|research|audit)\s+(\d{1,2})\b/i);
-    if (qMatch && qMatch[1]) {
-      const parsed = parseInt(qMatch[1], 10);
-      if (parsed > 0 && parsed <= 50) quantity = parsed;
-    }
-
-    // Auto-detect requested fields from prompt
-    const lowerP = prompt.toLowerCase();
-    const fallbackFields = new Set<string>();
+    const quantity = Math.min(Math.max(workGoal.quantity || 1, 1), 50);
+    const fallbackFields = new Set<string>(workGoal.requestedFields);
     if (/\b(phone|call|mobile|number|telephone)\b/i.test(lowerP)) fallbackFields.add('phone');
     if (/\b(website|websites|site|url|web)\b/i.test(lowerP)) fallbackFields.add('website');
     if (/\b(email|mail|contact)\b/i.test(lowerP)) fallbackFields.add('email');
-    if (/\b(founder|founders|ceo|owner|leadership|team)\b/i.test(lowerP)) fallbackFields.add('founder');
+    if (/\b(founder|founders|ceo|owner|leadership|team|decision[- ]maker)\b/i.test(lowerP)) fallbackFields.add('founder');
     if (/\b(pricing|price|prices|cost|tier|plans|rate|pricing model)\b/i.test(lowerP)) fallbackFields.add('pricing');
     if (/\b(services|service|offerings|products|features|solutions)\b/i.test(lowerP)) fallbackFields.add('services');
     if (/\b(bio|biography|about|description)\b/i.test(lowerP)) fallbackFields.add('bio');
@@ -369,52 +407,68 @@ export class PlanValidator {
     if (/\b(outdated|legacy|modern|responsive|mobile-friendly|website status)\b/i.test(lowerP)) fallbackFields.add('website_status');
     if (/\b(https|ssl|tls|security|certificate)\b/i.test(lowerP)) fallbackFields.add('https');
 
-    // Resolve location
-    let resolvedLocation = extractLocationCandidate(prompt);
-    if (!resolvedLocation && defaultLocation) {
-      resolvedLocation = defaultLocation;
-    }
-    if (!resolvedLocation && conversationHistory) {
-      resolvedLocation = extractLocationFromHistory(conversationHistory);
-    }
+    let resolvedLocation = workGoal.location || (workGoal.isWorkTask ? extractLocationCandidate(prompt) : '');
+    if (!resolvedLocation && conversationHistory) resolvedLocation = extractLocationFromHistory(conversationHistory);
+    if (!resolvedLocation && defaultLocation) resolvedLocation = defaultLocation;
 
-    const noWebsiteRequired = /\b(?:no|without|lacking|bina|missing)\s+(?:any\s+)?websites?\b|\bwebsites?\s+nahi\s+hai\b|\bno-websites?\b/i.test(lowerP);
-    const emailActionsRequired = /\b(?:send|dispatch|outreach)\s+(?:outreach\s+)?(?:proposals?|emails?|mails?)\b|\b(?:proposal|email|mail)\s+bhejo\b|\bcold\s+emails?\b|\breach\s+out\b/i.test(lowerP);
-    const proposalRequired = /\b(?:proposals?|pitch|pitches|personalized\s+proposals?|pitch\s+drafts?)\b|\bproposals?\s+(?:banao|likho)\b/i.test(lowerP) || emailActionsRequired;
-
+    const noWebsiteRequired = workGoal.noWebsiteRequired;
+    const emailActionsRequired = workGoal.emailActionsRequired;
+    const proposalRequired = workGoal.proposalRequired;
     const requiredActions: string[] = [];
-    if (/find|search|discover|list|get/i.test(lowerP) || userIntent === 'DISCOVERY_AND_EXTRACTION') {
-      requiredActions.push('find_businesses');
-    }
-    if (noWebsiteRequired) {
-      requiredActions.push('verify_website_absence');
-    }
-    if (fallbackFields.has('email') || emailActionsRequired) {
-      requiredActions.push('find_contact');
-    }
+    if (workGoal.isWorkTask || userIntent === 'DISCOVERY_AND_EXTRACTION') requiredActions.push('search_web');
+    if (noWebsiteRequired) requiredActions.push('verify_website_absence');
+    if (fallbackFields.has('email') || emailActionsRequired) requiredActions.push('inspect_official_page_for_contact');
     requiredActions.push('extract_facts');
-    if (proposalRequired) {
-      requiredActions.push('generate_proposal');
-    }
-    if (emailActionsRequired) {
-      requiredActions.push('send_email');
-    }
+    if (proposalRequired) requiredActions.push('generate_proposal');
+    if (emailActionsRequired) requiredActions.push('send_email');
     requiredActions.push('record_result');
+
+    let nextAction = this.createFallbackAction(prompt, userIntent, resolvedLocation);
+    if (workGoal.isWorkTask && !hasUrl && userIntent !== 'DIRECT_CHAT') {
+      const isLocalWithoutLocation =
+        /\b(small businesses?|restaurants?|baker(?:y|ies)|dentists?|gyms?|salons?|plumbers?|cafes?|hotels?)\b/i.test(prompt) &&
+        !resolvedLocation;
+      nextAction = isLocalWithoutLocation
+        ? {
+            type: 'ask_clarification',
+            toolName: '',
+            toolArgs: {},
+            rationale: 'Location is required for local discovery',
+            expectedObservation: 'User specifies target location',
+            clarificationQuestion: 'Which location should I target?',
+          }
+        : {
+            type: 'execute_tool',
+            toolName: 'search_web',
+            toolArgs: {
+              query: buildWebSearchQuery(prompt, { location: resolvedLocation, industry: workGoal.industry }),
+              location: resolvedLocation,
+              limit: Math.min(Math.max(quantity, 10), 30),
+              attempt: 0,
+            },
+            rationale: 'Start deterministic web discovery with a normalized subject query',
+            expectedObservation: 'Candidate official homepage URLs; snippets are not facts',
+          };
+    }
 
     return {
       goal: prompt,
       originalUserRequest: prompt,
       userIntent,
-      entities: [],
+      entities: workGoal.entities,
       requestedFields: Array.from(fallbackFields),
       quantity,
       location: resolvedLocation,
-      constraints: noWebsiteRequired ? ['Must NOT have an active website'] : [],
+      constraints: workGoal.constraints,
       sourcePreference: hasUrl ? 'direct_website' : hasProfile ? 'auto' : 'auto',
       discoveryStrategy: isChat ? 'direct_chat' : hasUrl ? 'direct_url' : 'search_first',
       browserRequired: !isChat,
-      toolsRequired: isChat ? [] : ['google_search', 'browser_navigate'],
-      expectedOutput: 'Grounded response to user request',
+      toolsRequired: isChat
+        ? []
+        : hasUrl
+        ? ['analyze_website']
+        : ['search_web', 'analyze_website', ...(proposalRequired ? ['generate_proposal'] : []), ...(emailActionsRequired ? ['send_email'] : [])],
+      expectedOutput: 'Grounded response with a Result table, evidence, sources, and limitations',
       completionCriteria: `Verify ${quantity} items (${requiredActions.join(' -> ')}) with full source evidence.`,
       requiredActions,
       externalActionsRequired: emailActionsRequired,
@@ -422,7 +476,7 @@ export class PlanValidator {
       proposalRequired,
       noWebsiteRequired,
       browserActionsRequired: !isChat,
-      nextAction: this.createFallbackAction(prompt, userIntent, resolvedLocation),
+      nextAction,
       confidence: 0.8,
     };
   }
@@ -464,7 +518,7 @@ export class PlanValidator {
         : prompt.slice(0, 80);
       return {
         type: 'execute_tool',
-        toolName: 'search_businesses',
+        toolName: 'search_web',
         toolArgs: { query: q, location: defaultLocation },
         rationale: `Search local businesses in ${defaultLocation}`,
         expectedObservation: `List of verified businesses in ${defaultLocation}`,
@@ -488,7 +542,7 @@ export class PlanValidator {
       const loc = defaultLocation ? ` in ${defaultLocation}` : '';
       return {
         type: 'execute_tool',
-        toolName: 'google_search',
+        toolName: 'search_web',
         toolArgs: {
           query: `${prompt.slice(0, 80)} official website`.trim(),
           location: defaultLocation,
@@ -500,8 +554,8 @@ export class PlanValidator {
 
     return {
       type: 'execute_tool',
-      toolName: 'google_search',
-      toolArgs: { query: prompt.slice(0, 100), location: defaultLocation },
+      toolName: 'search_web',
+      toolArgs: { query: buildWebSearchQuery(prompt, { location: defaultLocation }) },
       rationale: 'Search web for candidate entities and live sources',
       expectedObservation: 'List of relevant candidate websites to inspect',
     };

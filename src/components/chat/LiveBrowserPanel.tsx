@@ -57,8 +57,12 @@ export const LiveBrowserPanel: React.FC<LiveBrowserPanelProps> = ({
     error,
   } = browserState;
 
+  // A visual browser panel is only valid for a real live-browser runtime.
+  // HTTP inspection results remain in the report/activity stream and are not
+  // presented as a simulated browser window.
+  if (mode !== 'live_browser') return null;
+
   const isNavigating = status === 'navigating' || isLoading;
-  const isLiveBrowser = mode === 'live_browser';
 
   const handleCopyUrl = () => {
     if (url && url !== 'about:blank') {
@@ -96,22 +100,14 @@ export const LiveBrowserPanel: React.FC<LiveBrowserPanelProps> = ({
 
           <div className="h-3.5 w-[1px] bg-[#E0DCD5] dark:bg-[#383530] mx-0.5" />
 
-          {/* Mode Badge (LIVE BROWSER vs HTTP FALLBACK) */}
+          {/* Mode Badge: this component is mounted only for a real browser runtime. */}
           <div
             id="browser-mode-badge"
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase ${
-              isLiveBrowser
-                ? 'bg-[#EBF3ED] text-[#2E6B48] border border-[#2E6B48]/30 dark:bg-[#1C2920] dark:text-[#57AB5A]'
-                : 'bg-[#F2EFE9] text-[#78746B] border border-[#D9D5CC] dark:bg-[#262420] dark:text-[#A8A49D]'
-            }`}
-            title={isLiveBrowser ? 'Connected to Remote Chromium CDP' : 'Fast HTTP DOM Simulation & Verification Mode'}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-[#EBF3ED] text-[#2E6B48] border border-[#2E6B48]/30 dark:bg-[#1C2920] dark:text-[#57AB5A]"
+            title="Connected to a live browser runtime"
           >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                isLiveBrowser ? 'bg-[#3F7A5A] animate-pulse' : 'bg-[#8C887B]'
-              }`}
-            />
-            <span>{isLiveBrowser ? 'LIVE BROWSER' : 'HTTP FALLBACK'}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3F7A5A] animate-pulse" />
+            <span>LIVE BROWSER</span>
           </div>
 
           {/* Status Badge */}
@@ -315,7 +311,7 @@ export const LiveBrowserPanel: React.FC<LiveBrowserPanelProps> = ({
         </div>
 
         <div className="text-[11px] text-[#8C887B] dark:text-[#6B6862] shrink-0">
-          Base44 Super Agent Browser
+          Live browser view
         </div>
       </div>
     </div>
