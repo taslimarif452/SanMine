@@ -2,8 +2,8 @@
  * Official (key-based) Web Search with Automatic Failover
  *
  * Order of operations:
- *   1. Tavily  (TAVILY_API_KEY / TAVILY_KEY)
- *   2. Serper  (SERPER_API_KEY / SERPER_KEY)  — used immediately if Tavily
+ *   1. Tavily  (TAVILY_API_KEY)
+ *   2. Serper  (SERPER_API_KEY)  — used immediately if Tavily
  *      is rate-limited / quota-exhausted / unauthenticated / down
  *   3. Neither provider returns hits → caller falls back to the legacy
  *      Google / Bing / DuckDuckGo HTML scraping layer.
@@ -19,7 +19,8 @@
  * logged, returned to the frontend, or embedded in diagnostics.
  */
 
-import { GoogleSearchResultItem } from './googleSearch.js';
+import type { GoogleSearchResultItem } from './googleSearch.js';
+import { buildWebSearchQuery } from './searchQuery.js';
 
 export type OfficialProviderId = 'tavily' | 'serper';
 
@@ -53,6 +54,8 @@ export interface OfficialSearchResponse {
 export interface OfficialSearchOptions {
   limit?: number;
   timeoutMs?: number;
+  /** Restrict this call to one provider for deterministic router attempts. */
+  provider?: OfficialProviderId;
   /** Injectable clock / fetch for unit tests (not used by production code). */
   now?: () => number;
   fetchImpl?: typeof fetch;
@@ -97,11 +100,11 @@ export function __resetOfficialSearchCooldownsForTests(): void {
 }
 
 function readTavilyKey(): string {
-  return (process.env.TAVILY_API_KEY || process.env.TAVILY_KEY || '').trim();
+  return (process.env.TAVILY_API_KEY || '').trim();
 }
 
 function readSerperKey(): string {
-  return (process.env.SERPER_API_KEY || process.env.SERPER_KEY || '').trim();
+  return (process.env.SERPER_API_KEY || '').trim();
 }
 
 /** Diagnostic booleans only — never reveal key material. */
@@ -449,15 +452,20 @@ export async function performOfficialWebSearch(
   options: OfficialSearchOptions = {}
 ): Promise<OfficialSearchResponse> {
   const rawQuery = (query || '').trim();
+  const normalizedQuery = buildWebSearchQuery(rawQuery) || rawQuery;
   const limit = Math.min(Math.max(options.limit || 10, 1), 30);
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
   const fetchImpl: typeof fetch = options.fetchImpl || fetch;
   const now = options.now || Date.now;
 
-  const hasAnyKey = Boolean(readTavilyKey() || readSerperKey());
+  const hasAnyKey = options.provider
+    ? options.provider === 'tavily'
+      ? Boolean(readTavilyKey())
+      : Boolean(readSerperKey())
+    : Boolean(readTavilyKey() || readSerperKey());
 
   const base: OfficialSearchResponse = {
-    query: rawQuery,
+    query: normalizedQuery,
     success: false,
     items: [],
     totalResults: 0,
@@ -478,7 +486,11 @@ export async function performOfficialWebSearch(
   }
 
   const primary = getPrimaryProvider();
-  const order: OfficialProviderId[] = primary === 'serper' ? ['serper', 'tavily'] : ['tavily', 'serper'];
+  const order: OfficialProviderId[] = options.provider
+    ? [options.provider]
+    : primary === 'serper'
+    ? ['serper', 'tavily']
+    : ['tavily', 'serper'];
 
   const cooldownNow = now();
   const cooldownProviders = order.filter((p) => isOnCooldown(p, cooldownNow));
@@ -494,8 +506,8 @@ export async function performOfficialWebSearch(
 
     const outcome =
       provider === 'tavily'
-        ? await callTavily(rawQuery, limit, timeoutMs, fetchImpl)
-        : await callSerper(rawQuery, limit, timeoutMs, fetchImpl);
+        ? await callTavily(normalizedQuery, limit, timeoutMs, fetchImpl)
+        : await callSerper(normalizedQuery, limit, timeoutMs, fetchImpl);
 
     if (outcome.failure) {
       if (outcome.failure.cooldown) {
@@ -531,6 +543,20 @@ export async function performOfficialWebSearch(
       .filter((c) => c.onCooldown)
       .map((c) => c.provider),
   };
+}
+
+/**
+ * Executes exactly one official provider. The search router uses this method
+ * to make provider choice a backend attempt (0 = Tavily, 1 = Serper), rather
+ * than an LLM decision. The legacy `performOfficialWebSearch` above remains
+ * available for callers that need its automatic Tavily → Serper failover.
+ */
+export async function performOfficialProviderSearch(
+  provider: OfficialProviderId,
+  query: string,
+  options: Omit<OfficialSearchOptions, 'provider'> = {}
+): Promise<OfficialSearchResponse> {
+  return performOfficialWebSearch(query, { ...options, provider });
 }
 
 /**

@@ -495,7 +495,7 @@ export class EvidenceProvenanceEngine {
    * 5. Limitations (Explanation for anything unverified, failed, or excluded)
    */
   public formatStructuredEvidenceReport(state: BrainTaskState): string {
-    const targetQuantity = state.plan.quantity || 1;
+    const targetQuantity = state.requestedQuantity || state.plan.quantity || 1;
     const allEntities = state.verifiedEntities || [];
 
     // Evaluate qualification, processing, and completion for each entity
@@ -559,8 +559,16 @@ export class EvidenceProvenanceEngine {
     const discoveredCount = Math.max(allEntities.length, state.discoveredCandidates?.length || 0, qualifiedEntities.length + excludedEntities.length);
     const verifiedCount = qualifiedEntities.length;
     const qualifiedCount = qualifiedEntities.length;
-    const remainingCount = Math.max(0, targetQuantity - successfulCount);
+    // "Remaining" is the discovery gap, not an email/proposal action gap.
+    // A verified company with an unlisted email still counts as verified.
+    const remainingCount = Math.max(0, targetQuantity - verifiedCount);
     const unverifiedCount = remainingCount;
+
+    // Keep report counters aligned with backend completion accounting.
+    state.requestedQuantity = targetQuantity;
+    state.verifiedQuantity = verifiedCount;
+    state.remaining = remainingCount;
+    state.requestedCount = targetQuantity;
 
     // Update state counters for traceability
     state.requestedCount = targetQuantity;
@@ -598,28 +606,31 @@ export class EvidenceProvenanceEngine {
     lines.push('');
 
     // --- 1b. HONEST VERIFICATION TABLE ---
-    // Requested / Verified / Could not verify counts followed by a
-    // Company | Website | Decision maker | Email | Status table. Emails that
-    // are not public are always shown as "Not found" — never invented.
+    // This is deliberately a sheet-like table. Every value is sourced from an
+    // inspected official page; search snippets are never used as evidence.
     const couldNotVerify = Math.max(0, targetQuantity - verifiedCount);
     lines.push(`**Requested:** ${targetQuantity} | **Verified:** ${verifiedCount} | **Could not verify:** ${couldNotVerify}`);
     lines.push('');
-    lines.push(`| Company | Website | Decision maker | Email | Status |`);
-    lines.push(`| --- | --- | --- | --- | --- |`);
+    lines.push(`| Company | Website | Decision maker | Email | Status | Source |`);
+    lines.push(`| --- | --- | --- | --- | --- | --- |`);
     if (qualifiedEntities.length > 0) {
       for (const ent of qualifiedEntities) {
         const company = ent.name || 'Unknown';
-        const website = ent.url || ent.website || (ent.hasWebsite === false ? 'No website' : 'Not found');
+        const websiteUrl = ent.url || ent.website || '';
+        const website = websiteUrl ? `[${websiteUrl}](${websiteUrl})` : 'Not found';
         // Decision maker / founder is surfaced only if explicitly captured in
-        // facts; otherwise "Not found" — never invented.
+        // facts; otherwise the absence is stated, never inferred.
         const dmFact = (ent.facts || []).find((f) => /founder|decision.?maker|ceo|owner|director/i.test(f.field));
-        const decisionMaker = dmFact?.extractedValue || 'Not found';
-        const email = ent.email ? `\`${ent.email}\`` : 'Not found';
-        const status = ent.status || ent.verificationStatus || 'Verified';
-        lines.push(`| ${company} | ${website} | ${decisionMaker} | ${email} | ${status} |`);
+        const decisionMaker = dmFact?.extractedValue || 'Not found / Not publicly verified';
+        const email = ent.email ? `\`${ent.email}\`` : 'Not found / Not publicly verified';
+        const status = ent.emailStatus === 'NOT_FOUND'
+          ? 'Verified site; email not publicly verified'
+          : ent.status || ent.verificationStatus || 'Verified';
+        const source = websiteUrl ? `[Official homepage](${websiteUrl})` : 'Not found';
+        lines.push(`| ${company} | ${website} | ${decisionMaker} | ${email} | ${status} | ${source} |`);
       }
     } else {
-      lines.push(`| — | — | — | Not found | Could not verify (live search returned 0 results; nothing invented) |`);
+      lines.push(`| — | — | Not found / Not publicly verified | Not found / Not publicly verified | Could not verify | No official source verified |`);
     }
     lines.push('');
 
@@ -637,6 +648,10 @@ export class EvidenceProvenanceEngine {
     lines.push(`- **Excluded**: ${excludedEntities.length}`);
     lines.push(`- **Unverified**: ${unverifiedCount}`);
     lines.push(`- **Remaining**: ${remainingCount}`);
+    if (typeof state.searchAttempts === 'number') {
+      lines.push(`- **Search attempts**: ${state.searchAttempts}`);
+      lines.push(`- **Queries used**: ${state.queriesUsed?.join(' | ') || 'None'}`);
+    }
     lines.push('');
 
     // --- 3. EVIDENCE ---
@@ -704,15 +719,23 @@ export class EvidenceProvenanceEngine {
         lines.push(`- [Source](${this.normalizeSourceUrl(u)}) (Inspected during execution)`);
       }
     } else {
-      lines.push(`- Public domain research engines & regional registry data.`);
+      lines.push(`- No official source was successfully inspected.`);
     }
     lines.push('');
 
     // --- 5. LIMITATIONS ---
     lines.push(`### Limitations\n`);
-    if (remainingCount > 0 || failedCount > 0 || excludedEntities.length > 0) {
+    const emailWasRequested = Boolean(state.plan.requestedFields?.includes('email') || state.plan.emailActionsRequired);
+    const decisionMakerWasRequested = Boolean(state.plan.requestedFields?.some((field) => /founder|decision.?maker|ceo|owner|leadership/i.test(field)));
+    const missingEmailCount = emailWasRequested ? qualifiedEntities.filter((entity) => !entity.email).length : 0;
+    const missingDecisionMakerCount = decisionMakerWasRequested
+      ? qualifiedEntities.filter(
+          (entity) => !(entity.facts || []).some((fact) => /founder|decision.?maker|ceo|owner|director/i.test(fact.field))
+        ).length
+      : 0;
+    if (remainingCount > 0 || failedCount > 0 || excludedEntities.length > 0 || missingEmailCount > 0 || missingDecisionMakerCount > 0) {
       if (remainingCount > 0) {
-        lines.push(`- **Candidate Pool Limitation**: Requested ${targetQuantity} entities, but only ${successfulCount} were successfully processed to completion.`);
+        lines.push(`- **Candidate Pool Limitation**: Requested ${targetQuantity} entities, but only ${verifiedCount} were verified from inspected official pages after the bounded search attempts.`);
       }
       if (failedCount > 0) {
         lines.push(`- **Failed Executions**: ${failedCount} entity action(s) failed during execution.`);
@@ -723,8 +746,14 @@ export class EvidenceProvenanceEngine {
           lines.push(`  - *${excl.name}*: Excluded (${excl.rejectionReason || 'Did not meet verification criteria'})`);
         }
       }
+      if (missingEmailCount > 0) {
+        lines.push(`- **Email availability**: ${missingEmailCount} verified company page(s) did not publicly expose an email. Shown as Not found / Not publicly verified.`);
+      }
+      if (missingDecisionMakerCount > 0) {
+        lines.push(`- **Decision-maker availability**: ${missingDecisionMakerCount} verified company page(s) did not publicly identify a decision maker.`);
+      }
     } else {
-      lines.push(`- All ${targetQuantity} requested items were verified and executed against primary and registry sources without synthetic extrapolation.`);
+      lines.push(`- All ${targetQuantity} requested items were verified against official sources without synthetic extrapolation.`);
     }
 
     return lines.join('\n');

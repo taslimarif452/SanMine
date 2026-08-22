@@ -204,7 +204,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
           // Tables (Contained in dedicated responsive wrapper)
           table: ({ children }) => (
             <div className="my-4 w-full overflow-x-auto rounded-xl border border-[#E5E2DC] bg-[#FFFFFF] shadow-2xs">
-              <table className="w-full border-collapse text-left text-sm">
+              <table className="min-w-[760px] w-full border-collapse text-left text-sm tabular-nums">
                 {children}
               </table>
             </div>

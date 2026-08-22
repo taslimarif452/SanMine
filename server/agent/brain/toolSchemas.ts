@@ -24,16 +24,16 @@ export interface BrainToolDefinition {
 
 export const BRAIN_AVAILABLE_TOOLS: BrainToolDefinition[] = [
   {
-    name: 'google_search',
+    name: 'search_web',
     description:
-      'Search Google/web index for live webpages, company websites, social media profiles, and directories.',
+      'Search the web for candidate official company homepages. Backend attempts are fixed: 0 Tavily, 1 Serper, 2+ free HTML. Search output is a URL queue; snippets are not verified facts.',
     category: 'search',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query or keyword (e.g. "Srinagar top bakeries", "Zapier founder email", "site:instagram.com ___tauqeer.x").',
+          description: 'A short subject query such as "SaaS companies Delhi"; never pass the full user instruction.',
         },
         location: {
           type: 'string',
@@ -41,7 +41,11 @@ export const BRAIN_AVAILABLE_TOOLS: BrainToolDefinition[] = [
         },
         limit: {
           type: 'number',
-          description: 'Number of results to return (default 10, max 20).',
+          description: 'Maximum candidate URLs to return (default 10, max 30).',
+        },
+        attempt: {
+          type: 'number',
+          description: 'Backend-controlled attempt number. Omit it; the deterministic state machine supplies 0, 1, or 2+.',
         },
       },
       required: ['query'],
@@ -286,38 +290,6 @@ export const BRAIN_AVAILABLE_TOOLS: BrainToolDefinition[] = [
     },
   },
   {
-    name: 'deep_web_research',
-    description:
-      'Autonomous deep research engine that traverses candidate URLs, follows internal links (About, Team, Pricing, Contact, Services), inspects pages, and extracts structured verified facts.',
-    category: 'search',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'The research entity name or target topic.',
-        },
-        targetUrl: {
-          type: 'string',
-          description: 'Optional direct target website URL.',
-        },
-        location: {
-          type: 'string',
-          description: 'Optional geographic location.',
-        },
-        specificFields: {
-          type: 'string',
-          description: 'Comma-separated fields to extract (e.g. "founder, email, phone, pricing, services").',
-        },
-        limit: {
-          type: 'number',
-          description: 'Max entities to discover and inspect.',
-        },
-      },
-      required: ['query'],
-    },
-  },
-  {
     name: 'calculate_lead_score',
     description:
       'Calculates an objective 0–100 lead health score, sales tier, and urgency based on verified technical deficiencies.',
@@ -395,30 +367,6 @@ export const BRAIN_AVAILABLE_TOOLS: BrainToolDefinition[] = [
     },
   },
   {
-    name: 'search_businesses',
-    description:
-      'Searches for local businesses or establishments matching query and location using active business search provider.',
-    category: 'search',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Business keyword (e.g. "bakeries", "restaurants", "dentists").',
-        },
-        location: {
-          type: 'string',
-          description: 'City or geographic area (e.g. "Srinagar", "Delhi", "New York").',
-        },
-        limit: {
-          type: 'number',
-          description: 'Max results to return (default 20).',
-        },
-      },
-      required: ['query'],
-    },
-  },
-  {
     name: 'send_email',
     description:
       'Dispatches an email or outreach proposal to a verified recipient email address via configured Gmail OAuth or SMTP credentials.',
@@ -458,5 +406,11 @@ export function getBrainToolDeclarationsForPrompt(): string {
 }
 
 export function isToolRegistered(toolName: string): boolean {
-  return BRAIN_AVAILABLE_TOOLS.some((t) => t.name === toolName);
+  // Legacy names remain executable aliases for older checkpoints, but they are
+  // intentionally not advertised to the brain. New discovery plans use only
+  // search_web.
+  return BRAIN_AVAILABLE_TOOLS.some((t) => t.name === toolName) ||
+    toolName === 'google_search' ||
+    toolName === 'search_businesses' ||
+    toolName === 'deep_web_research';
 }

@@ -11,7 +11,6 @@ import { sendGmailSmtpMessage } from './gmail/smtp.js';
 import { browserSessionManager } from './browser/sessionManager.js';
 import { executeGenericWebResearch } from './research/deepWebResearcher.js';
 import { runAutonomousAgentLoop } from './agent/autonomousBrain.js';
-import { universalTaskPlanner } from './taskPlanner/planner.js';
 import { universalAgentBrain } from './agent/brain/index.js';
 import { resolveExecutionMode, isLeadingSlashCommand, stripLeadingSlash } from './agent/modeRouter.js';
 import { classifyUserIntent, describeWorkPlanForUser } from './agent/workIntent.js';
@@ -857,10 +856,6 @@ export async function orchestrateAgentTask({
     `[AGENT MODE ACTIVATED]\ntaskId=${taskId}\nuserRequestId=${userRequestId || taskId}\nobjective="${agentObjective}"\nisSlashCommand=${route.isExplicitSlashCommand}\nisContinuation=${route.isAgentContinuation}\nuserIntent=${classifyUserIntent(agentObjective)}\neffectiveAutoSend=${effectiveAutoSend}`
   );
 
-  const agentMessages = messages.map((m) =>
-    m === lastUserMsg ? { ...m, content: agentObjective } : m
-  );
-
   const historyWithNormalizedPrompt = cleanConversationHistory.map((m, idx) =>
     idx === cleanConversationHistory.length - 1 && m.role === 'user'
       ? { ...m, content: agentObjective }
@@ -902,21 +897,14 @@ export async function orchestrateAgentTask({
       emitEvent({ type: 'message.completed', content: result.finalAnswer });
     }
   } catch (brainErr: any) {
-    console.warn('[Universal Agent Brain Notice] Executing via task planner fallback:', brainErr.message);
-    await universalTaskPlanner.execute({
+    // There is one agent brain. Do not silently switch to a second planner
+    // with different search/browser semantics; surface the failure honestly.
+    console.warn('[Universal Agent Brain Error]:', brainErr.message);
+    emitEvent({
+      type: 'task.failed',
       taskId,
-      userRequestId,
-      userId,
-      userApiKey,
-      providerId,
-      model,
-      messages: agentMessages,
-      defaultLocation,
-      autoSendProposals,
-      temperature,
-      maxTokens,
-      sendEvent: emitEvent,
-      abortSignal,
+      message: brainErr?.message || 'The agent brain could not complete this task.',
+      reason: 'brain_execution_failed',
     });
   }
 

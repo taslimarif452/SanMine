@@ -161,6 +161,12 @@ export interface TaskResult {
   proposalsSent?: number;
   duration?: string;
   summary?: string;
+  requestedQuantity?: number;
+  verifiedQuantity?: number;
+  remaining?: number;
+  searchAttempts?: number;
+  queriesUsed?: string[];
+  visitedUrls?: string[];
 }
 
 export interface TaskExecution {

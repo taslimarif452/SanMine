@@ -31,8 +31,8 @@ ${toolsPrompt}
 4. If the user provides a direct URL (e.g. "https://example.com" or "example.com"), set \`sourcePreference: "direct_website"\` and \`discoveryStrategy: "direct_url"\`.
 5. If the user mentions a platform (Instagram, LinkedIn, Twitter, Google), set \`sourcePreference\` accordingly.
 6. Choose the exact initial action (\`nextAction\`) to execute.
-   - For web search / company discovery: typically \`google_search\` or \`search_businesses\`.
-   - For direct website inspection: \`browser_navigate\` with the destination URL.
+   - For web search / company discovery: use \`search_web\` only. Provider selection is fixed by the backend attempt counter (Tavily → Serper → free HTML).
+   - For direct website inspection: use \`analyze_website\` with the official homepage URL (or \`browser_navigate\` only when a live browser is explicitly needed).
    - For direct conversational greetings/questions requiring no external tools: set \`nextAction: { "type": "complete", "rationale": "Direct answer", "toolName": "", "toolArgs": {} }\`.
 7. Browser Requirement: If the task requires visiting websites, reading live web pages, following links, or capturing visual screenshots, set \`browserRequired: true\`.
 8. Anti-Hallucination: If requested fields cannot be found after inspection, they must be marked as "Not found / Not publicly listed".
@@ -82,13 +82,14 @@ CRITICAL RULES & DIRECTIVES:
    - If candidate URLs were discovered from search and need inspection: call \`browser_navigate\` or \`analyze_website\` on candidate URLs.
    - If user requested a multi-step chain (e.g., find businesses -> check website -> find emails -> generate proposals -> send emails), execute every required step for qualified candidates before considering the entity complete.
 2. MULTI-STEP ACTION PIPELINE:
-   - Step 1 Discovery: \`search_businesses\` or \`google_search\`
-   - Step 2 Verification: Check website presence/absence, audit website if needed
-   - Step 3 Contact Discovery: Search for contact email / phone if requested
-   - Step 4 Proposal Generation: Call \`generate_proposal\` if proposals were requested
-   - Step 5 Outreach: Call \`send_email\` if email sending was requested
+   - Step 1 Discovery: \`search_web\` only. The backend chooses Tavily for attempt 0, Serper for attempt 1, and free HTML for attempt 2+.
+   - Step 2 Verification: Inspect the selected official homepage with \`analyze_website\` (or live \`browser_navigate\` when required).
+   - Step 3 Contact Discovery: use evidence from the inspected official page; missing fields are Not found / Not publicly verified.
+   - Step 4 Proposal Generation: Call \`generate_proposal\` if proposals were requested.
+   - Step 5 Outreach: Call \`send_email\` only after explicit confirmation, unless auto-send is on.
 3. PROGRESS ADHERENCE & ITERATION:
-   - If all candidates from current search are processed and verifiedCount < quantity: issue a new \`google_search\` or \`search_businesses\` with query variations, alternative keywords, or next pagination.
+   - Discovery intent is advanced by a backend deterministic state machine; do not choose a provider or call deep research.
+   - If all candidates from the current search are processed and verifiedCount < quantity, issue another \`search_web\` attempt. Stop after three searches and report honest counts.
    - Only choose 'complete' when the target quantity is met OR when all reasonable search iterations and sources have been exhausted.
 4. ZERO HALLUCINATION:
    - If after exhausting all searches only 3 out of 5 could be verified, do NOT invent 2 more. Choose 'complete' and transparently report 3 verified, 2 unavailable.

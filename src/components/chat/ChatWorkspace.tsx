@@ -338,13 +338,16 @@ export const ChatWorkspace: React.FC = () => {
                     </div>
                   ) : (
                     <div className="w-full space-y-3.5">
-                      {/* Base44-style Live Browser Activity Panel */}
-                      {(msg.browserSession || msg.execution?.browserSession) && (
-                        <LiveBrowserPanel
-                          browserState={msg.browserSession || msg.execution!.browserSession!}
-                          defaultExpanded={msg.isStreaming || msg.execution?.status === 'running'}
-                        />
-                      )}
+                      {/* Show a visual panel only when the backend reports a real live browser. */}
+                      {(() => {
+                        const browserState = msg.browserSession || msg.execution?.browserSession;
+                        return browserState?.mode === 'live_browser' ? (
+                          <LiveBrowserPanel
+                            browserState={browserState}
+                            defaultExpanded={msg.isStreaming || msg.execution?.status === 'running'}
+                          />
+                        ) : null;
+                      })()}
 
                       {/* Inline Agent Activity / Real Tool Progress */}
                       {msg.execution && msg.execution.steps && msg.execution.steps.length > 0 && (
