@@ -303,6 +303,8 @@ export class BrainDecisionEngine {
         status: 'EXECUTING',
         replanCount: 0,
         remainingWork: plan.completionCriteria,
+        consecutiveEmptySearches: 0,
+        searchExhausted: false,
       };
 
       currentAction = plan.nextAction;
@@ -784,12 +786,38 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         }
       }
 
+      // Anti-loop / anti-hallucination: track empty discovery searches. After
+      // two consecutive zero-result searches (and with no candidates already
+      // queued and nothing verified), mark discovery as exhausted so the loop
+      // terminates honestly instead of re-querying and inventing companies.
+      if (candidates.length > 0) {
+        state.consecutiveEmptySearches = 0;
+        state.searchExhausted = false;
+      } else {
+        state.consecutiveEmptySearches = (state.consecutiveEmptySearches || 0) + 1;
+        if (
+          state.consecutiveEmptySearches >= 2 &&
+          state.discoveredCandidates.length === 0 &&
+          state.verifiedEntities.length === 0
+        ) {
+          state.searchExhausted = true;
+          opts.sendEvent({
+            type: 'task.progress',
+            message:
+              'Live search returned 0 results across multiple queries. No companies were invented. Reporting an honest empty result.',
+          });
+        }
+      }
+
       opts.sendEvent({
         type: 'task.candidates_discovered',
         query: action.toolArgs?.query || '',
         count: candidates.length,
         totalDiscovered: state.discoveredCandidates.length,
-        message: `Discovered ${candidates.length} candidate URLs from search. Inspecting destination websites...`,
+        message:
+          candidates.length > 0
+            ? `Discovered ${candidates.length} candidate URLs from search. Inspecting destination websites...`
+            : 'Live search returned 0 results. No companies were invented.',
       });
     } else if (action.toolName === 'search_businesses') {
       const businesses = Array.isArray(toolResult?.businesses) ? toolResult.businesses : [];
@@ -1580,6 +1608,21 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     const qualifiedCandidates = state.verifiedEntities.filter((e) => e.status !== 'REJECTED');
     const fullyCompletedCount = this.countFullyCompletedEntities(state);
     const targetQuantity = plan.quantity;
+
+    // Honest termination: discovery has been exhausted (zero live results
+    // across multiple queries, no candidates, nothing verified). Do NOT loop
+    // or invent companies — report the empty result.
+    if (state.searchExhausted && qualifiedCandidates.length === 0) {
+      return {
+        type: 'report_unavailable',
+        toolName: '',
+        toolArgs: {},
+        rationale: 'Live search returned 0 results; reporting honestly without inventing data.',
+        expectedObservation: 'Final honest empty-result report',
+        unavailableReason:
+          'Live search returned 0 results. No companies, websites, decision makers, or emails were invented.',
+      };
+    }
 
     // EMAIL PERMISSION GATE: proposals are ready to send but the user has not
     // confirmed dispatch yet -> pause and ask before sending. Never claim EMAIL_SENT.

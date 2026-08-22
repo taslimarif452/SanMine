@@ -67,21 +67,13 @@ export class SearchProviderRegistry {
 
   /**
    * Safe public provider info list.
+   *
+   * The built-in "API-Free Web Research Engine" remains available internally
+   * as the last-resort discovery layer (via `getActiveProvider()`), but it is
+   * intentionally hidden from the end-user UI: list views return an empty set.
    */
   getInfoList(): BusinessSearchProviderInfo[] {
-    return [
-      {
-        id: 'web_research',
-        name: 'API-Free Web Research Engine',
-        badge: 'Built-in Engine',
-        description: 'Autonomous public web discovery and direct HTTPS research engine.',
-        requiresKey: false,
-        isConfigured: true,
-        helpUrl: '',
-        helpText: '',
-        keyPlaceholder: '',
-      },
-    ];
+    return [];
   }
 
   async search(params: BusinessSearchParams): Promise<BusinessSearchResult> {

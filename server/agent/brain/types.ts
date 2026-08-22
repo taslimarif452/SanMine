@@ -289,6 +289,14 @@ export interface BrainTaskState {
    * so the engine stops asking and completes without dispatching.
    */
   emailConfirmationDeclined?: boolean;
+  /**
+   * Number of consecutive discovery searches that returned ZERO candidates.
+   * Used to stop the agent loop honestly instead of re-querying forever and
+   * inventing data. Reset as soon as any search returns candidates.
+   */
+  consecutiveEmptySearches?: number;
+  /** True once discovery has been exhausted (zero hits and no candidates). */
+  searchExhausted?: boolean;
 }
 
 export interface UniversalBrainRunOptions {

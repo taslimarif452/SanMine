@@ -786,11 +786,19 @@ const googleSearchTool: AgentTool = {
       locationFilter: location,
     });
 
-    emitEvent?.({
-      type: 'tool.completed',
-      tool: 'google_search',
-      message: `Found ${result.items.length} relevant results via ${result.engineUsed}`,
-    });
+    if (result.items.length > 0) {
+      emitEvent?.({
+        type: 'tool.completed',
+        tool: 'google_search',
+        message: `Found ${result.items.length} relevant results via ${result.engineUsed}`,
+      });
+    } else {
+      emitEvent?.({
+        type: 'tool.completed',
+        tool: 'google_search',
+        message: 'Live search returned 0 results. No companies were invented.',
+      });
+    }
 
     return result;
   },

@@ -5,4 +5,5 @@ export * from './researchEngine.js';
 export * from './discovery.js';
 export * from './webResearchTool.js';
 export * from './googleSearch.js';
+export * from './officialSearch.js';
 export * from './deepWebResearcher.js';
