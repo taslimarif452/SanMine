@@ -14,6 +14,7 @@ import { runAutonomousAgentLoop } from './agent/autonomousBrain.js';
 import { universalTaskPlanner } from './taskPlanner/planner.js';
 import { universalAgentBrain } from './agent/brain/index.js';
 import { resolveExecutionMode, isLeadingSlashCommand, stripLeadingSlash } from './agent/modeRouter.js';
+import { classifyUserIntent, describeWorkPlanForUser } from './agent/workIntent.js';
 import { executeNormalChat } from './chat/normalChat.js';
 import {
   processBatchProposalPipeline,
@@ -785,6 +786,8 @@ export async function orchestrateAgentTask({
 
   // 1. NORMAL CHAT MODE: Directly stream LLM response via dedicated Normal Chat Brain without invoking Task Planner, Agent Brain, browser, or discovery tools
   if (route.mode === 'normal_chat') {
+    // Fast "Thinking..." indicator; never adds itself to the completed step list.
+    sendEvent({ type: 'task.started', taskId, message: 'Thinking...' });
     await executeNormalChat({
       taskId: userRequestId || taskId,
       chatId,
@@ -807,6 +810,19 @@ export async function orchestrateAgentTask({
   console.log(
     `[AGENT MODE ACTIVATED]\ntaskId=${taskId}\nuserRequestId=${userRequestId || taskId}\nobjective="${agentObjective}"\nisSlashCommand=${route.isExplicitSlashCommand}\nisContinuation=${route.isAgentContinuation}`
   );
+
+  // Emit an immediate "Thinking..." task.started so the UI shows the pulsing
+  // ChatGPT-style indicator before any tool / planning work begins.
+  const spokenPlan = describeWorkPlanForUser(agentObjective, defaultLocation);
+  sendEvent({
+    type: 'task.started',
+    taskId,
+    message: 'Thinking...',
+    headline: spokenPlan.headline,
+    plan: spokenPlan.plan,
+    provider: providerId,
+    model,
+  });
 
   const agentMessages = messages.map((m) =>
     m === lastUserMsg ? { ...m, content: agentObjective } : m

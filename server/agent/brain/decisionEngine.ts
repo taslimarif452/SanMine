@@ -14,16 +14,12 @@ import {
   CandidateTarget,
   GroundedFact,
   EntityActionRecord,
+  TrackedEntityState,
   UniversalBrainRunOptions,
   UniversalBrainRunResult,
 } from './types.js';
 import { brainLlmClient } from './llmClient.js';
-import {
-  getPlanSystemPrompt,
-  getEvaluateStepSystemPrompt,
-  getReplanSystemPrompt,
-  getFinalSynthesisSystemPrompt,
-} from './promptTemplates.js';
+import { getFinalSynthesisSystemPrompt } from './promptTemplates.js';
 import { PlanValidator } from './planValidator.js';
 import { evidenceProvenanceEngine } from './evidenceProvenance.js';
 import { executeTool } from '../../tools.js';
@@ -175,29 +171,32 @@ export class BrainDecisionEngine {
         message: `Resuming task from checkpoint at step ${state.currentIteration} (${state.verifiedEntities.length}/${state.plan.quantity} verified)...`,
       });
     } else {
-      sendEvent({
-        type: 'task.started',
-        taskId,
-        prompt,
-        message: 'Universal Agent Brain analyzing request...',
-        timestamp: new Date().toISOString(),
-      });
+      // NOTE: task.started ("Thinking...") is emitted by the orchestrator
+      // (agent.ts) before the brain runs, so the UI gets the pulsing
+      // indicator immediately. We do NOT re-emit task.started here.
 
-      // 1. FORMULATE INITIAL PLAN VIA LLM
-      plan = await this.formulatePlan({
-        taskId,
+      // 1. FORMULATE INITIAL PLAN — deterministic (no LLM JSON plan call).
+      //    Passing null forces PlanValidator to build a safe, grounded plan
+      //    and keeps the first paint fast and reliable.
+      plan = PlanValidator.validateAndRepairPlan(
+        null,
         prompt,
-        conversationHistory,
-        providerId,
-        model,
-        userApiKey,
-        userId,
         defaultLocation,
-        sendEvent,
-        abortSignal,
-      });
+        conversationHistory
+      );
 
       // Initialize State
+      // Discovery runs search → inspect up to ~6 official pages → optional
+      // contact search, so allow a slightly higher iteration cap.
+      const discoveryIntent =
+        plan.userIntent === 'DISCOVERY_AND_EXTRACTION' ||
+        plan.userIntent === 'MULTI_STEP_RESEARCH' ||
+        plan.userIntent === 'PROFILE_RESEARCH';
+      const effectiveMaxIterations = Math.min(
+        Math.max(maxIterations, discoveryIntent ? 30 : 15),
+        35
+      );
+
       state = {
         taskId,
         userId,
@@ -209,7 +208,7 @@ export class BrainDecisionEngine {
         })) || [],
         plan,
         currentIteration: 0,
-        maxIterations: Math.min(maxIterations, 20),
+        maxIterations: effectiveMaxIterations,
         verifiedEntities: [],
         visitedUrls: new Set<string>(),
         visitedDomains: new Set<string>(),
@@ -255,6 +254,13 @@ export class BrainDecisionEngine {
       state.finalResponse = directAnswer;
 
       await taskCheckpointManager.saveCheckpoint(state, { lastProvider: providerId, lastModel: model });
+
+      // Stream the answer so the assistant bubble fills in (and the Thinking
+      // indicator clears on the first token).
+      if (directAnswer) {
+        sendEvent({ type: 'message.delta', content: directAnswer });
+        sendEvent({ type: 'message.completed', content: directAnswer });
+      }
 
       sendEvent({
         type: 'task.completed',
@@ -487,19 +493,42 @@ export class BrainDecisionEngine {
       message: 'Compiling verified findings with source citations...',
     });
 
-    const finalAnswer = await this.synthesizeFinalAnswer({
-      prompt,
-      state,
-      providerId: activeProvider,
-      model: activeModel,
-      userApiKey,
-      userId,
-      abortSignal,
-      onFailover: (ev: any) => {
-        activeProvider = ev.newProvider;
-        activeModel = ev.newModel;
-      },
-    });
+    // For research/discovery, produce the deterministic findings table and
+    // stream it. We do NOT rely on formatStructuredEvidenceReport here because
+    // it rejects 0-qualified entities when an email is required and would
+    // emit "No verified entities" even when a table of discovered companies
+    // exists.
+    const isDiscoveryTask =
+      plan.userIntent === 'DISCOVERY_AND_EXTRACTION' ||
+      plan.userIntent === 'MULTI_STEP_RESEARCH' ||
+      plan.userIntent === 'PROFILE_RESEARCH';
+
+    let finalAnswer: string;
+    if (isDiscoveryTask) {
+      finalAnswer = this.formatFindingsReport(state);
+    } else {
+      finalAnswer = await this.synthesizeFinalAnswer({
+        prompt,
+        state,
+        providerId: activeProvider,
+        model: activeModel,
+        userApiKey,
+        userId,
+        abortSignal,
+        onFailover: (ev: any) => {
+          activeProvider = ev.newProvider;
+          activeModel = ev.newModel;
+        },
+      });
+    }
+
+    // Stream the final answer as the assistant message so the Thinking
+    // indicator clears and the bubble fills in. task.completed also carries
+    // the answer in result.answer for clients that only read that field.
+    if (finalAnswer) {
+      sendEvent({ type: 'message.delta', content: finalAnswer });
+      sendEvent({ type: 'message.completed', content: finalAnswer });
+    }
 
     state.status = 'COMPLETED';
     state.finalResponse = finalAnswer;
@@ -530,7 +559,12 @@ export class BrainDecisionEngine {
   }
 
   /**
-   * Formulates the structured task plan via LLM.
+   * Formulates the structured task plan.
+   *
+   * Deliberately deterministic: we skip the LLM JSON-planning call and build
+   * the plan directly via PlanValidator.validateAndRepairPlan(null, ...).
+   * This removes a slow, failure-prone JSON round-trip and guarantees a valid
+   * plan on every request.
    */
   private async formulatePlan(opts: {
     taskId: string;
@@ -544,35 +578,12 @@ export class BrainDecisionEngine {
     sendEvent: (event: any) => void;
     abortSignal?: AbortSignal;
   }): Promise<BrainTaskPlan> {
-    const historyText = opts.conversationHistory
-      .slice(-4)
-      .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-      .join('\n');
-
-    const userPrompt = `User Prompt: "${opts.prompt}"
-${historyText ? `\nRecent Conversation Context:\n${historyText}` : ''}
-${opts.defaultLocation ? `\nUser Default Location: ${opts.defaultLocation}` : ''}
-
-Generate the strict JSON BrainTaskPlan for this request.`;
-
-    try {
-      const response = await brainLlmClient.complete({
-        providerId: opts.providerId,
-        model: opts.model,
-        userApiKey: opts.userApiKey,
-        userId: opts.userId,
-        systemPrompt: getPlanSystemPrompt(),
-        userPrompt,
-        temperature: 0.1,
-        jsonMode: true,
-        abortSignal: opts.abortSignal,
-      });
-
-      return PlanValidator.validateAndRepairPlan(response.json, opts.prompt, opts.defaultLocation, opts.conversationHistory);
-    } catch (err: any) {
-      console.warn('[Brain Planning Notice] LLM planning failed, using schema validator fallback:', err.message);
-      return PlanValidator.validateAndRepairPlan(null, opts.prompt, opts.defaultLocation, opts.conversationHistory);
-    }
+    return PlanValidator.validateAndRepairPlan(
+      null,
+      opts.prompt,
+      opts.defaultLocation,
+      opts.conversationHistory
+    );
   }
 
   /**
@@ -638,42 +649,41 @@ Generate the strict JSON BrainTaskPlan for this request.`;
 
     if (action.toolName === 'google_search') {
       const items = Array.isArray(toolResult?.items) ? toolResult.items : [];
-      const candidates: CandidateTarget[] = items
-        .filter((it: any) => Boolean(it.link || it.url))
-        .map((it: any) => ({
-          url: it.link || it.url,
+      const beforeCount = state.discoveredCandidates.length;
+
+      // Register candidates, skipping search-engine/SERP URLs and de-duping by domain.
+      for (const it of items) {
+        const rawUrl = it?.link || it?.url;
+        if (!rawUrl) continue;
+        this.registerDiscoveredCandidate(state, {
+          url: rawUrl,
           title: it.title || it.domain || 'Candidate Result',
           snippet: it.snippet,
           domain: it.domain,
           relevanceScore: it.score || 0.9,
-        }));
+        });
+      }
 
+      const newCandidates = state.discoveredCandidates.slice(beforeCount);
       observation.searchState = {
         query: action.toolArgs?.query || '',
-        candidateUrls: candidates,
-        totalResults: candidates.length,
+        candidateUrls: newCandidates,
+        totalResults: newCandidates.length,
       };
-
-      // Add to discovered candidates (Search results are candidates, verified upon page inspection)
-      for (const cand of candidates) {
-        if (!state.discoveredCandidates.some((c) => c.url === cand.url)) {
-          state.discoveredCandidates.push(cand);
-        }
-      }
 
       opts.sendEvent({
         type: 'task.candidates_discovered',
         query: action.toolArgs?.query || '',
-        count: candidates.length,
+        count: newCandidates.length,
         totalDiscovered: state.discoveredCandidates.length,
-        message: `Discovered ${candidates.length} candidate URLs from search. Inspecting destination websites...`,
+        message: `Discovered ${newCandidates.length} candidate listings (not yet verified). Inspecting official pages...`,
       });
     } else if (action.toolName === 'search_businesses') {
       const businesses = Array.isArray(toolResult?.businesses) ? toolResult.businesses : [];
       observation.extractedData = toolResult;
       for (const b of businesses) {
-        if (b.website && !state.discoveredCandidates.some((c) => c.url === b.website)) {
-          state.discoveredCandidates.push({
+        if (b.website) {
+          this.registerDiscoveredCandidate(state, {
             url: b.website,
             title: b.name,
             snippet: `${b.address || ''} ${b.phone || ''}`.trim(),
@@ -711,6 +721,16 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         } catch {}
       }
 
+      // Mark any matching discovered candidate as inspected
+      if (pageUrl) {
+        const normVisited = evidenceProvenanceEngine.normalizeSourceUrl(pageUrl);
+        for (const cand of state.discoveredCandidates) {
+          if (cand.url === pageUrl || cand.url === normVisited) {
+            cand.isInspected = true;
+          }
+        }
+      }
+
       // Record or update verified entity from live page inspection
       if (toolResult?.success && pageUrl && !pageUrl.includes('google.com/search')) {
         const existing = state.verifiedEntities.find((e) => e.url === pageUrl);
@@ -725,12 +745,16 @@ Generate the strict JSON BrainTaskPlan for this request.`;
           try {
             const domainName = new URL(pageUrl).hostname.replace(/^www\./, '');
             state.verifiedEntities.push({
+              id: `ent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
               name: pageTitle || domainName,
               url: pageUrl,
+              website: pageUrl,
               description: textContent ? textContent.slice(0, 200).replace(/\s+/g, ' ') : undefined,
               hasWebsite: true,
               status: 'VERIFIED',
               facts: [],
+              sources: [],
+              actionRecords: [],
             });
           } catch {}
         }
@@ -739,14 +763,33 @@ Generate the strict JSON BrainTaskPlan for this request.`;
       // Extract facts from text and update verified entity fields
       this.extractFactsFromPageContent(pageUrl, pageTitle, textContent, observation.extractedFacts);
 
-      // Attach extracted phone/email/services to verified entity
+      // Attach extracted phone/email/founder/services to verified entity
       const matchedEntity = state.verifiedEntities.find((e) => e.url === pageUrl);
       if (matchedEntity) {
+        // Tag every fact extracted from this page with the owning entity so the
+        // findings table can surface decision makers / emails reliably.
+        for (const f of observation.extractedFacts) {
+          if (!f.entityId && matchedEntity.id) f.entityId = matchedEntity.id;
+          if (!f.entityName) f.entityName = matchedEntity.name;
+        }
+
         const phoneFact = observation.extractedFacts.find((f) => f.field === 'phone');
         if (phoneFact && !matchedEntity.phone) matchedEntity.phone = phoneFact.extractedValue;
 
         const emailFact = observation.extractedFacts.find((f) => f.field === 'email');
-        if (emailFact && !matchedEntity.email) matchedEntity.email = emailFact.extractedValue;
+        if (emailFact && !matchedEntity.email) {
+          const emailCheck = evidenceProvenanceEngine.verifyEmailEvidence(emailFact.extractedValue);
+          if (emailCheck.emailStatus === 'VERIFIED' && emailCheck.email) {
+            matchedEntity.email = emailCheck.email;
+            matchedEntity.emailStatus = 'VERIFIED';
+          }
+        }
+
+        const founderFact = observation.extractedFacts.find((f) => f.field === 'founder');
+        if (founderFact && !matchedEntity.services) {
+          // Stash decision maker on the entity for convenience.
+          (matchedEntity as any).decisionMaker = founderFact.extractedValue;
+        }
 
         const serviceFact = observation.extractedFacts.find((f) => f.field === 'services');
         if (serviceFact && !matchedEntity.services) matchedEntity.services = serviceFact.extractedValue;
@@ -1058,6 +1101,170 @@ Generate the strict JSON BrainTaskPlan for this request.`;
   }
 
   /**
+   * Returns true for search-engine / SERP / redirect-host URLs that must never
+   * be treated as discovered candidate destinations.
+   */
+  private isSearchEngineUrl(rawUrl: string): boolean {
+    if (!rawUrl || typeof rawUrl !== 'string') return true;
+    let host = '';
+    try {
+      host = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`).hostname.toLowerCase();
+    } catch {
+      return true;
+    }
+    host = host.replace(/^www\./, '');
+    if (host === '') return true;
+    const blocked = [
+      'google.com', 'google.co.in', 'google.co.uk', 'googleusercontent.com', 'gstatic.com',
+      'bing.com', 'duckduckgo.com', 'yahoo.com', 'ecosia.org', 'ask.com',
+      'search.yahoo.com', 'microsoft.com',
+      'youtube.com', 'youtu.be',
+      'translate.google.com', 'webcache.googleusercontent.com',
+    ];
+    if (blocked.some((b) => host === b || host.endsWith('.' + b))) return true;
+    // Google / Bing search paths regardless of host
+    if (/\/search|\/url\?|\/ck\/a\?|\/l\/\?/.test(rawUrl)) return true;
+    return false;
+  }
+
+  /**
+   * Registers a candidate destination discovered during research.
+   *
+   * Search-engine URLs (SERPs, redirect wrappers) are skipped. Duplicates
+   * (by normalized URL or domain) are de-duped. Candidates are tagged so the
+   * pipeline can prefer official company websites for inspection.
+   */
+  private registerDiscoveredCandidate(state: BrainTaskState, cand: Partial<CandidateTarget>): void {
+    if (!cand || !cand.url) return;
+    const normUrl = evidenceProvenanceEngine.normalizeSourceUrl(cand.url);
+    if (!normUrl || this.isSearchEngineUrl(normUrl)) return;
+
+    const domain = evidenceProvenanceEngine.extractDomain(normUrl);
+    const sourceType = evidenceProvenanceEngine.classifySourceQuality(normUrl);
+    const isDestination = sourceType === 'PRIMARY';
+
+    if (state.discoveredCandidates.some((c) => c.url === normUrl)) return;
+    // De-dupe by registered domain so we inspect one page per company.
+    if (state.discoveredCandidates.some((c) => c.domain === domain)) return;
+
+    state.discoveredCandidates.push({
+      url: normUrl,
+      title: cand.title || domain || normUrl,
+      snippet: cand.snippet,
+      domain,
+      relevanceScore: cand.relevanceScore ?? 0.8,
+      isDestination,
+      isInspected: false,
+    });
+  }
+
+  /**
+   * Picks the next unvisited official (non-search-engine, non-social,
+   * non-directory) candidate page to inspect, BEFORE issuing another search.
+   *
+   * Inspection is capped so a single search cannot balloon into dozens of
+   * navigations. Returns undefined when there is nothing official left to
+   * inspect (caller should then search again or finish).
+   */
+  private pickUnvisitedOfficialCandidate(state: BrainTaskState, cap = 6): CandidateTarget | undefined {
+    const inspectedOfficialCount = (state.verifiedEntities || []).filter((e) => e.hasWebsite && e.url).length;
+    if (inspectedOfficialCount >= cap) return undefined;
+    if (!Array.isArray(state.discoveredCandidates) || state.discoveredCandidates.length === 0) {
+      return undefined;
+    }
+
+    const unvisited = state.discoveredCandidates.filter(
+      (c) => c.url && !state.visitedUrls.has(c.url) && !this.isSearchEngineUrl(c.url)
+    );
+
+    // Prefer PRIMARY official websites, then everything else (directories etc).
+    const official = unvisited.filter((c) => c.isDestination);
+    const pool = official.length > 0 ? official : unvisited;
+
+    const sorted = [...pool].sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    return sorted[0];
+  }
+
+  /**
+   * Builds the grounded findings TABLE that is streamed to the user as the
+   * final answer for research/discovery tasks.
+   *
+   * Columns: Company | Website | Decision maker | Email | Status.
+   * - Emails are only shown when extracted from a public page; otherwise "Not found".
+   * - Nothing is invented. Companies come strictly from verified entities /
+   *   inspected official pages.
+   */
+  private formatFindingsReport(state: BrainTaskState): string {
+    const entities = (state.verifiedEntities || []).filter(
+      (e) => e && e.name && e.status !== 'REJECTED'
+    );
+
+    const goal = state.plan?.goal || 'Research findings';
+    const header = `## Findings\n\n${goal}\n`;
+
+    if (entities.length === 0) {
+      return `${header}\nNo verified companies or official pages could be confirmed from the live search. Refine the query or add a location, and I will re-run the research.`;
+    }
+
+    const rows = entities.slice(0, 30).map((e) => {
+      const company = (e.name || 'Unknown').replace(/\|/g, ' ').trim();
+
+      let websiteCell = 'Not found';
+      const siteUrl = e.url || e.website;
+      if (siteUrl) {
+        const safe = siteUrl.toString();
+        const label = evidenceProvenanceEngine.extractDomain(safe) || safe;
+        websiteCell = `[${label}](${safe})`;
+      }
+
+      // Decision maker: use an extracted founder/leadership fact if present.
+      let decisionMaker = 'Not found';
+      const founderFact = state.extractedFacts.find(
+        (f) =>
+          f.field === 'founder' &&
+          (f.entityId === e.id ||
+            (f.entityName && e.name && f.entityName.toLowerCase() === e.name.toLowerCase()) ||
+            (f.sourceUrl && e.url && evidenceProvenanceEngine.normalizeSourceUrl(f.sourceUrl) === evidenceProvenanceEngine.normalizeSourceUrl(e.url)))
+      );
+      if (founderFact?.extractedValue) {
+        decisionMaker = founderFact.extractedValue.replace(/\|/g, ' ').trim();
+      }
+
+      // Email: only show a verified public email; never invent one.
+      let emailCell = 'Not found';
+      if (e.email && e.emailStatus !== 'NOT_FOUND') {
+        const validated = evidenceProvenanceEngine.verifyEmailEvidence(e.email);
+        if (validated.emailStatus === 'VERIFIED' && validated.email) {
+          emailCell = `\`${validated.email}\``;
+        }
+      }
+
+      const status = this.statusLabel(e);
+      return `| ${company} | ${websiteCell} | ${decisionMaker} | ${emailCell} | ${status} |`;
+    });
+
+    const table = [
+      '| Company | Website | Decision maker | Email | Status |',
+      '|---|---|---|---|---|',
+      ...rows,
+    ].join('\n');
+
+    const sourceCount = state.visitedUrls ? state.visitedUrls.size : 0;
+    const footer = `\n\n_${entities.length} compan${entities.length === 1 ? 'y' : 'ies'} verified across ${sourceCount} inspected page${sourceCount === 1 ? '' : 's'}. Missing emails are shown as "Not found" — no contact details were invented._`;
+
+    return `${header}\n${table}${footer}`;
+  }
+
+  private statusLabel(e: TrackedEntityState): string {
+    if (e.emailSent) return 'Contacted';
+    if (e.proposalMarkdown) return 'Proposal ready';
+    if (e.status === 'REJECTED') return 'Excluded';
+    if (e.email) return 'Verified';
+    if (e.hasWebsite) return 'Website verified';
+    return 'Discovered';
+  }
+
+  /**
    * Counts entities that have completed ALL required pipeline stages and satisfied all constraints.
    */
   private countFullyCompletedEntities(state: BrainTaskState): number {
@@ -1080,9 +1287,12 @@ Generate the strict JSON BrainTaskPlan for this request.`;
         return false;
       }
 
-      // 4. If outreach was requested AND Gmail is connected AND this entity has an email, wait until send is attempted
+      // 4. If outreach was requested AND Gmail is connected AND auto-send is
+      //    enabled, wait until the email is actually sent (or failed). When
+      //    auto-send is OFF the proposal stays a draft awaiting confirmation,
+      //    which counts as complete for the research pipeline.
       const shouldSend =
-        Boolean(plan.emailActionsRequired && state.gmailConnected && (state.autoSendProposals || plan.emailActionsRequired));
+        Boolean(plan.emailActionsRequired && state.gmailConnected && state.autoSendProposals);
       if (shouldSend && ent.email && !ent.emailSent && !ent.emailSendError) {
         return false;
       }
@@ -1301,74 +1511,11 @@ Generate the strict JSON BrainTaskPlan for this request.`;
     abortSignal?: AbortSignal;
     onFailover?: (event: any) => void;
   }): Promise<BrainActionDecision> {
-    const { state, lastObservation } = opts;
-
-    // Evaluate multi-step pipeline candidates
-    const qualifiedCandidates = state.verifiedEntities.filter((e) => e.status !== 'REJECTED');
-    const fullyCompletedCount = this.countFullyCompletedEntities(state);
-    const targetQuantity = state.plan.quantity;
-
-    // Remaining unvisited destination URLs from search candidates
-    const unvisitedCandidates = state.discoveredCandidates.filter((c) => !state.visitedUrls.has(c.url));
-
-    const promptContext = `### Task Plan
-- Goal: ${state.plan.goal}
-- Intent: ${state.plan.userIntent}
-- Target Quantity: ${targetQuantity} (Fully completed pipeline: ${fullyCompletedCount}/${targetQuantity}, Qualified candidates: ${qualifiedCandidates.length})
-- Constraints: ${state.plan.constraints.join('; ') || 'None'}
-- Required Actions Pipeline: ${state.plan.requiredActions?.join(' -> ') || 'Find -> Verify -> Complete'}
-- Requested Fields: ${state.plan.requestedFields.join(', ') || 'General Overview'}
-- Completion Criteria: ${state.plan.completionCriteria}
-
-### Current Tracked Entities (${qualifiedCandidates.length} qualified):
-${qualifiedCandidates.slice(0, 8).map((e) => `* ${e.name} | Web: ${e.hasWebsite ? 'YES' : 'NO'} | Email: ${e.email || 'None'} | Proposal: ${e.proposalMarkdown ? 'YES' : 'NO'} | Sent: ${e.emailSent ? 'YES' : e.emailSendError ? 'FAILED' : 'NO'}`).join('\n') || 'None'}
-
-### Latest Observation
-- Tool Executed: ${lastObservation.toolName}
-- Success: ${lastObservation.success}
-${lastObservation.error ? `- Error: ${lastObservation.error}` : ''}
-${lastObservation.searchState ? `- Search Query: "${lastObservation.searchState.query}" (Found ${lastObservation.searchState.totalResults} results)` : ''}
-- Facts Extracted this step: ${lastObservation.extractedFacts.length}
-
-Evaluate this observation and decide the NEXT ACTION to advance the multi-step pipeline.
-DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is less than target quantity (${targetQuantity}) and further candidates can be discovered or processed!`;
-
-    try {
-      const response = await brainLlmClient.complete({
-        providerId: opts.providerId,
-        model: opts.model,
-        userApiKey: opts.userApiKey,
-        userId: opts.userId,
-        systemPrompt: getEvaluateStepSystemPrompt(),
-        userPrompt: promptContext,
-        temperature: 0.1,
-        jsonMode: true,
-        abortSignal: opts.abortSignal,
-        onFailover: opts.onFailover,
-      });
-
-      const parsedAction = PlanValidator.validateAndRepairAction(
-        response.json,
-        state.userPrompt,
-        state.plan.userIntent
-      );
-
-      // Guard against premature LLM completion when target quantity and pipeline are incomplete
-      if (
-        (parsedAction.type === 'complete' || parsedAction.type === 'report_unavailable') &&
-        fullyCompletedCount < targetQuantity &&
-        state.currentIteration < state.maxIterations - 1
-      ) {
-        console.log(`[Brain Anti-Premature Completion Guard] LLM suggested ${parsedAction.type}, but only ${fullyCompletedCount}/${targetQuantity} satisfied. Routing next pipeline step.`);
-        const forced = this.getDeterministicNextPipelineAction(state);
-        if (forced.type !== 'complete') return forced;
-      }
-
-      return parsedAction;
-    } catch (err: any) {
-      console.warn('[Brain ReAct Evaluation Notice] Using heuristic pipeline action:', err.message);
-      return this.getDeterministicNextPipelineAction(state);
-    }
+    // Fully deterministic step routing — no LLM JSON evaluation. The pipeline
+    // router already encodes the required order (official-page inspection
+    // before second search, proposal, optional send). This keeps research
+    // fast and prevents a premature "complete" that yields steps-only output.
+    return this.getDeterministicNextPipelineAction(opts.state);
   }
 
   /**
@@ -1381,8 +1528,13 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     const targetQuantity = plan.quantity;
 
     // Check 1: Do we need to dispatch emails for proposals that are ready?
+    // SAFETY: Gmail is only dispatched automatically when the user's
+    // autoSendProposals setting is ON. Otherwise proposals remain drafts and
+    // are sent only after explicit confirmation in the UI.
     const shouldDispatchEmail =
-      Boolean(state.gmailConnected) && Boolean(plan.emailActionsRequired || state.autoSendProposals);
+      Boolean(state.gmailConnected) &&
+      Boolean(plan.emailActionsRequired) &&
+      Boolean(state.autoSendProposals);
     if (shouldDispatchEmail) {
       const candToSend = qualifiedCandidates.find((e) => e.proposalMarkdown && e.email && !e.emailSent && !e.emailSendError);
       if (candToSend) {
@@ -1438,10 +1590,27 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
       }
     }
 
-    // Check 4: If we have unvisited candidate URLs from search discovery, visit the next one
-    const unvisitedCandidates = state.discoveredCandidates.filter((c) => !state.visitedUrls.has(c.url));
-    if (unvisitedCandidates.length > 0) {
-      const nextCandidate = unvisitedCandidates[0];
+    // Check 4: Inspect discovered OFFICIAL pages BEFORE running another search.
+    // pickUnvisitedOfficialCandidate prefers official company sites and caps the
+    // number of pages inspected so a single search cannot run away.
+    const nextOfficial = this.pickUnvisitedOfficialCandidate(state);
+    if (nextOfficial) {
+      return {
+        type: 'execute_tool',
+        toolName: 'browser_navigate',
+        toolArgs: { url: nextOfficial.url },
+        rationale: `Inspecting official page: ${nextOfficial.title}`,
+        expectedObservation: 'Inspect webpage headings, text, founder, email, pricing, and contact details',
+      };
+    }
+
+    // Any other unvisited non-search-engine candidate (directory/social) — only
+    // after the official-page cap has been reached.
+    const remainingUnvisited = (state.discoveredCandidates || []).filter(
+      (c) => c.url && !state.visitedUrls.has(c.url) && !this.isSearchEngineUrl(c.url)
+    );
+    if (remainingUnvisited.length > 0) {
+      const nextCandidate = remainingUnvisited[0];
       return {
         type: 'execute_tool',
         toolName: 'browser_navigate',
@@ -1497,31 +1666,15 @@ DO NOT return 'complete' if fully completed count (${fullyCompletedCount}) is le
     abortSignal?: AbortSignal;
     onFailover?: (event: any) => void;
   }): Promise<BrainTaskPlan> {
+    // Deterministic re-plan: rebuild a safe plan from the original prompt and
+    // keep the already-discovered state. Avoids an LLM JSON round-trip.
     const { state } = opts;
-    const userPrompt = `The previous strategy encountered roadblocks:
-- Failed Actions: ${JSON.stringify(state.failedActions.slice(-2))}
-- Visited URLs: ${Array.from(state.visitedUrls).join(', ')}
-- Goal: ${state.plan.goal}
-
-Formulate an adjusted BrainTaskPlan with alternative search queries or direct browsing techniques.`;
-
-    try {
-      const response = await brainLlmClient.complete({
-        providerId: opts.providerId,
-        model: opts.model,
-        userApiKey: opts.userApiKey,
-        userId: opts.userId,
-        systemPrompt: getReplanSystemPrompt(),
-        userPrompt,
-        temperature: 0.2,
-        jsonMode: true,
-        abortSignal: opts.abortSignal,
-        onFailover: opts.onFailover,
-      });
-      return PlanValidator.validateAndRepairPlan(response.json, state.userPrompt);
-    } catch {
-      return state.plan;
-    }
+    return PlanValidator.validateAndRepairPlan(
+      null,
+      state.userPrompt,
+      state.plan.location,
+      state.conversationHistory
+    );
   }
 
   /**

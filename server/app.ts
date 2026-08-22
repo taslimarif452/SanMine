@@ -752,11 +752,24 @@ export function createExpressApp(): express.Application {
     // Diagnostic request tracking
     const userRequestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
-    // Database persistence setup for authenticated users
-    let activeChatId = chatId;
+    // Set up SSE headers FIRST (with Vercel/proxy anti-buffering) and open
+    // the stream before any database work. This makes the "Thinking..."
+    // indicator appear immediately instead of blocking on Neon writes.
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
     const lastUserMsg = messages[messages.length - 1];
 
-    if (authUser && lastUserMsg && lastUserMsg.role === 'user') {
+    // Kick off the DB persistence (chat creation + user message save) in the
+    // background. The SSE stream does NOT wait for it. We resolve the
+    // activeChatId before the agent needs it, but the user-visible stream is
+    // already open.
+    let activeChatId = chatId;
+    const chatReady: Promise<void> = (async () => {
+      if (!authUser || !lastUserMsg || lastUserMsg.role !== 'user') return;
       try {
         if (activeChatId) {
           const existingChat = await getChatById(activeChatId, authUser.id);
@@ -776,7 +789,7 @@ export function createExpressApp(): express.Application {
           activeChatId = newChat.id;
         }
 
-        // Save user message immediately to Neon PostgreSQL
+        // Save user message to Neon PostgreSQL (non-blocking to first paint)
         await saveMessage({
           chatId: activeChatId,
           userId: authUser.id,
@@ -791,16 +804,11 @@ export function createExpressApp(): express.Application {
       } catch (dbErr: any) {
         console.warn('[Neon DB] Pre-stream save user message warning:', dbErr.message);
       }
-    }
-
-    // Set up SSE headers (with Vercel/proxy anti-buffering)
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
+    })();
 
     let accumulatedAssistantText = '';
+    let assistantStreamStarted = false;
+    let assistantCompletedSent = false;
     const executionEvents: any[] = [];
     let finalTaskResult: any = null;
     let streamFailed = false;
@@ -809,11 +817,37 @@ export function createExpressApp(): express.Application {
       // Intercept and accumulate streaming assistant response safely
       if (data && typeof data === 'object') {
         if (data.type === 'message.delta' && typeof data.content === 'string') {
-          accumulatedAssistantText += data.content;
+          assistantStreamStarted = true;
+          // De-duplicate: if the brain/orchestrator already streamed and then
+          // emits the same final answer as a delta, don't concatenate twice.
+          if (assistantCompletedSent) {
+            // already completed; ignore a trailing duplicate delta
+          } else {
+            accumulatedAssistantText += data.content;
+          }
         } else if (data.type === 'message.completed' && typeof data.content === 'string') {
-          accumulatedAssistantText = data.content;
+          if (!assistantCompletedSent) {
+            accumulatedAssistantText = data.content;
+            assistantCompletedSent = true;
+            assistantStreamStarted = true;
+          } else {
+            // Duplicate completion (orchestrator after brain) — drop it so the
+            // client does not render the answer twice.
+            return;
+          }
         } else if (data.type === 'task.completed') {
           if (data.result) finalTaskResult = data.result;
+          // If the answer only arrived in result.answer (no message.delta was
+          // streamed), surface it as the assistant content now.
+          if (!assistantStreamStarted && data.result?.answer) {
+            const answer = String(data.result.answer);
+            const payload = { type: 'message.delta', content: answer };
+            accumulatedAssistantText = answer;
+            assistantStreamStarted = true;
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify(payload)}\n\n`);
+            }
+          }
         } else if (data.type === 'error' || data.type === 'task.failed') {
           streamFailed = true;
         }
@@ -821,7 +855,9 @@ export function createExpressApp(): express.Application {
           executionEvents.push(data);
         }
       }
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      }
     };
 
     const abortController = new AbortController();
@@ -833,7 +869,21 @@ export function createExpressApp(): express.Application {
       }
     });
 
+    // Send the immediate "Thinking..." indicator the moment the stream is open,
+    // before any tool/planning/DB work. The orchestrator also sends one, but
+    // emitting here guarantees the fastest possible first paint.
+    sendEvent({
+      type: 'task.started',
+      taskId: userRequestId,
+      message: 'Thinking...',
+      provider: targetProviderId,
+      model: targetModel,
+    });
+
     try {
+      // Ensure chat record exists before the agent tries to checkpoint it.
+      await chatReady;
+
       await orchestrateAgentTask({
         userRequestId,
         chatId: activeChatId,

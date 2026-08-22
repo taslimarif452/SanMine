@@ -201,26 +201,28 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
             );
           },
 
-          // Tables (Contained in dedicated responsive wrapper)
+          // Tables — sheet-like GFM table: sticky header, zebra striping, and a
+          // comfortable min-width so findings tables never collapse. The CSS in
+          // index.css handles sticky/zebra; here we provide the responsive shell.
           table: ({ children }) => (
-            <div className="my-4 w-full overflow-x-auto rounded-xl border border-[#E5E2DC] bg-[#FFFFFF] shadow-2xs">
+            <div className="sanmine-table-wrap my-4 w-full overflow-x-auto rounded-xl border border-[#E5E2DC] bg-[#FFFFFF] shadow-2xs">
               <table className="w-full border-collapse text-left text-sm">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-[#F6F5F1] border-b border-[#E5E2DC] text-xs font-semibold text-[#1F1E1B] uppercase tracking-wider">
+            <thead className="sanmine-thead bg-[#F6F5F1] border-b border-[#E5E2DC] text-xs font-semibold text-[#1F1E1B] uppercase tracking-wider">
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-[#E5E2DC]/60 text-[#383733]">
+            <tbody className="sanmine-tbody divide-y divide-[#E5E2DC]/60 text-[#383733]">
               {children}
             </tbody>
           ),
           tr: ({ children }) => (
-            <tr className="hover:bg-[#FAF9F5]/80 transition-colors">
+            <tr className="sanmine-tr hover:bg-[#FAF9F5]/80 transition-colors">
               {children}
             </tr>
           ),
@@ -230,7 +232,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) =
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-4 py-2.5 text-xs sm:text-sm text-[#383733] leading-normal align-top">
+            <td className="px-4 py-2.5 text-xs sm:text-sm text-[#383733] leading-normal align-top whitespace-normal break-words">
               {children}
             </td>
           ),

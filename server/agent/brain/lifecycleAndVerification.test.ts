@@ -96,6 +96,15 @@ async function runLifecycleTests() {
       emailActionsRequired: true,
       constraints: ['Must not have active website'],
     },
+    // Outreach scenario: Gmail is connected and auto-send is ON (the real
+    // run() sets these from the request/Settings). This keeps the send-gate
+    // active so pending emails are dispatched.
+    gmailConnected: true,
+    autoSendProposals: true,
+    discoveredCandidates: [],
+    visitedUrls: new Set<string>(),
+    currentIteration: 0,
+    maxIterations: 30,
     verifiedEntities: [
       {
         id: '1',

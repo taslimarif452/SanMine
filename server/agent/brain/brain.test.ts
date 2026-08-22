@@ -212,7 +212,12 @@ async function runBrainTests() {
   });
 
   assert(testRun.success === true, 'Execution completes successfully');
-  assert(eventsCaptured.some((e) => e.type === 'task.started'), 'task.started event emitted');
+  // task.started is now emitted by the orchestrator/SSE layer; the brain is
+  // responsible for streaming its answer and emitting task.completed.
+  assert(
+    eventsCaptured.some((e) => e.type === 'message.delta' || e.type === 'message.completed'),
+    'brain streams its answer (message.delta/completed)'
+  );
   assert(eventsCaptured.some((e) => e.type === 'task.completed'), 'task.completed event emitted');
 
   // Test 9: Quantity and Grounded Citation Verification

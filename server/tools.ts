@@ -115,7 +115,7 @@ const searchBusinessesTool: AgentTool = {
       emitEvent?.({
         type: 'tool.completed',
         tool: 'search_businesses',
-        message: `Found ${result.businesses.length} businesses`,
+        message: `Discovered ${result.businesses.length} candidate listings (not yet verified)`,
         detail: `Provider: ${result.providerName}`,
       });
 
@@ -1073,6 +1073,17 @@ export async function executeTool(
   emitEvent?: (event: any) => void,
   context?: ToolExecutionContext
 ): Promise<any> {
+  // A complete/terminal "action" can carry an empty toolName. Skip it cleanly
+  // instead of throwing `Tool "" is not registered` (which left the spinner stuck).
+  if (!toolName || typeof toolName !== 'string' || !toolName.trim()) {
+    return {
+      success: true,
+      skipped: true,
+      reason: 'empty_tool_name',
+      message: 'No tool action required (terminal step).',
+    };
+  }
+
   const tool = toolRegistry.get(toolName);
   if (!tool) {
     emitEvent?.({

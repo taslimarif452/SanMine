@@ -95,6 +95,7 @@ interface AgentContextType {
   // Conversation Management
   conversations: ConversationThread[];
   currentConversationId: string;
+  isLoadingChats: boolean;
   createConversation: () => string;
   createNewTask: () => void;
   resetConversation: () => void;
@@ -104,6 +105,7 @@ interface AgentContextType {
 
   // Active Thread Chat & Execution State
   messages: ChatMessage[];
+  isLoadingMessages: boolean;
   agentStatus: AgentStatus;
   taskStatus: TaskStatus;
   currentPrompt: string;
@@ -229,6 +231,49 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [currentConversationId, setCurrentConversationId] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoadingChats, setIsLoadingChats] = useState<boolean>(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
+
+  // ── SessionStorage chat cache (instant first paint) ──────────────────────
+  // Keyed per-user. Holds the last-seen chat list and per-chat messages so the
+  // UI can render immediately without blocking on Neon / migrate-local.
+  const cacheKey = currentUser ? `sanmine_chat_cache_v1_${currentUser.uid}` : '';
+
+  const readSessionCache = useCallback((): {
+    chats?: ConversationThread[];
+    messagesByChat?: Record<string, ChatMessage[]>;
+    activeChatId?: string;
+  } => {
+    if (!cacheKey) return {};
+    try {
+      const raw = sessionStorage.getItem(cacheKey);
+      if (!raw) return {};
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }, [cacheKey]);
+
+  const writeSessionCache = useCallback(
+    (patch: {
+      chats?: ConversationThread[];
+      messagesByChat?: Record<string, ChatMessage[]>;
+      activeChatId?: string;
+    }) => {
+      if (!cacheKey) return;
+      try {
+        const prev = readSessionCache();
+        const merged = {
+          chats: patch.chats ?? prev.chats,
+          messagesByChat: { ...(prev.messagesByChat || {}), ...(patch.messagesByChat || {}) },
+          activeChatId: patch.activeChatId ?? prev.activeChatId,
+        };
+        sessionStorage.setItem(cacheKey, JSON.stringify(merged));
+      } catch {
+        // sessionStorage may be unavailable (private mode); ignore.
+      }
+    },
+    [cacheKey, readSessionCache]
+  );
 
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
@@ -316,56 +361,72 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
 
     setIsLoadingChats(true);
+
+    // 1. Instant first paint: hydrate chats + active-thread messages from the
+    //    per-user sessionStorage cache. We do NOT await migration or the Neon
+    //    fetch before rendering.
+    const cached = readSessionCache();
+    if (cached.chats && cached.chats.length > 0) {
+      setConversations(cached.chats);
+      const activeId =
+        cached.activeChatId && cached.chats.some((c) => c.id === cached.activeChatId)
+          ? cached.activeChatId
+          : cached.chats[0].id;
+      setCurrentConversationId(activeId);
+      const cachedMsgs = cached.messagesByChat?.[activeId];
+      if (cachedMsgs && cachedMsgs.length > 0) {
+        setMessages(cachedMsgs);
+      }
+    }
+
     try {
       const token = await getIdToken();
       if (!token) return;
 
-      // Check for one-time legacy localStorage migration
+      // 2. One-time legacy localStorage migration — run in the BACKGROUND so it
+      //    never blocks the chat list / first paint.
       const migrationKey = `sanmine_chats_migrated_${currentUser.uid}`;
       const hasMigrated = localStorage.getItem(migrationKey);
-
       if (!hasMigrated) {
-        const legacyStored =
-          localStorage.getItem('sanmine_conversations_v3') ||
-          localStorage.getItem('saneye_conversations_v3') ||
-          localStorage.getItem('agentos_conversations_v3');
-
-        if (legacyStored) {
+        (async () => {
           try {
-            const parsed = JSON.parse(legacyStored);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const chatsWithMessages = parsed.filter(
-                (c: any) => Array.isArray(c.messages) && c.messages.length > 0
-              );
-              if (chatsWithMessages.length > 0) {
-                await fetch('/api/chats/migrate-local', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                  },
-                  body: JSON.stringify({ chats: chatsWithMessages }),
-                });
+            const legacyStored =
+              localStorage.getItem('sanmine_conversations_v3') ||
+              localStorage.getItem('saneye_conversations_v3') ||
+              localStorage.getItem('agentos_conversations_v3');
+
+            if (legacyStored) {
+              const parsed = JSON.parse(legacyStored);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const chatsWithMessages = parsed.filter(
+                  (c: any) => Array.isArray(c.messages) && c.messages.length > 0
+                );
+                if (chatsWithMessages.length > 0) {
+                  await fetch('/api/chats/migrate-local', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ chats: chatsWithMessages }),
+                  });
+                }
               }
             }
+            localStorage.removeItem('sanmine_conversations_v3');
+            localStorage.removeItem('saneye_conversations_v3');
+            localStorage.removeItem('agentos_conversations_v3');
+            localStorage.removeItem('sanmine_active_conversation_v3');
+            localStorage.setItem(migrationKey, 'true');
           } catch (migrateErr) {
             console.warn('[Chats Migration Notice]:', migrateErr);
           }
-        }
-
-        // Clean up legacy localStorage keys to ensure Neon is sole source of truth
-        localStorage.removeItem('sanmine_conversations_v3');
-        localStorage.removeItem('saneye_conversations_v3');
-        localStorage.removeItem('agentos_conversations_v3');
-        localStorage.removeItem('sanmine_active_conversation_v3');
-        localStorage.setItem(migrationKey, 'true');
+        })();
       }
 
-      // Fetch chats from Neon PostgreSQL
+      // 3. Fetch the authoritative chat list from Neon PostgreSQL.
       const res = await fetch('/api/chats', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (res.ok) {
@@ -387,44 +448,62 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           }));
 
           setConversations(threads);
-          const firstChat = threads[0];
+
+          // Keep the currently-active chat from the cache if it still exists
+          // server-side; otherwise default to the first chat.
+          const firstChat =
+            threads.find((t) => t.id === currentConversationId) || threads[0];
           setCurrentConversationId(firstChat.id);
 
-          // Fetch messages for initial active chat
-          const initialMsgs = await loadChatMessages(firstChat.id, token);
-          setMessages(initialMsgs);
-          setConversations((prev) =>
-            prev.map((t) => (t.id === firstChat.id ? { ...t, messages: initialMsgs } : t))
-          );
+          // 4. Load messages for the active chat (with isLoadingMessages).
+          setIsLoadingMessages(true);
+          try {
+            const initialMsgs = await loadChatMessages(firstChat.id, token);
+            setMessages(initialMsgs);
+            setConversations((prev) =>
+              prev.map((t) => (t.id === firstChat.id ? { ...t, messages: initialMsgs } : t))
+            );
+            writeSessionCache({
+              chats: threads,
+              messagesByChat: { [firstChat.id]: initialMsgs },
+              activeChatId: firstChat.id,
+            });
+          } finally {
+            setIsLoadingMessages(false);
+          }
         } else {
-          // If user has zero chats in DB, create initial chat
-          const createRes = await fetch('/api/chats', {
+          // User has zero chats in DB — create the initial chat (fire-and-forget
+          // so first paint is not blocked; an empty thread renders immediately).
+          const optimisticId = cached.chats?.[0]?.id || generateUuid();
+          const now = new Date().toISOString();
+          const optimisticThread: ConversationThread = {
+            id: optimisticId,
+            title: 'New Chat',
+            createdAt: now,
+            updatedAt: now,
+            group: 'Today',
+            messages: [],
+            taskStatus: 'idle',
+            selectedModel: { ...selectedModel },
+            isCustomTitle: false,
+          };
+          setConversations([optimisticThread]);
+          setCurrentConversationId(optimisticId);
+          setMessages([]);
+          writeSessionCache({
+            chats: [optimisticThread],
+            messagesByChat: { [optimisticId]: [] },
+            activeChatId: optimisticId,
+          });
+
+          fetch('/api/chats', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ title: 'New Chat' }),
-          });
-
-          if (createRes.ok) {
-            const createData = await createRes.json();
-            const newChat = createData.chat;
-            const initialThread: ConversationThread = {
-              id: newChat.id,
-              title: newChat.title,
-              createdAt: newChat.createdAt,
-              updatedAt: newChat.updatedAt,
-              group: 'Today',
-              messages: [],
-              taskStatus: 'idle',
-              selectedModel: { ...selectedModel },
-              isCustomTitle: false,
-            };
-            setConversations([initialThread]);
-            setCurrentConversationId(newChat.id);
-            setMessages([]);
-          }
+            body: JSON.stringify({ id: optimisticId, title: 'New Chat' }),
+          }).catch((err) => console.warn('Failed to create initial chat on server:', err));
         }
       }
     } catch (err) {
@@ -432,7 +511,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     } finally {
       setIsLoadingChats(false);
     }
-  }, [currentUser, getIdToken, loadChatMessages, selectedModel]);
+  }, [currentUser, getIdToken, loadChatMessages, selectedModel, readSessionCache, writeSessionCache]);
 
   useEffect(() => {
     loadUserChatsFromDb();
@@ -908,17 +987,32 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
       setMobileSidebarOpen(false);
       navigateToChat();
+      writeSessionCache({ activeChatId: id });
 
-      // Fetch persisted messages from Neon PostgreSQL
+      // Instant paint from cached / in-memory messages if we have them
+      const cachedMsgs = readSessionCache().messagesByChat?.[id];
+      if (cachedMsgs && cachedMsgs.length > 0) {
+        setMessages(cachedMsgs);
+      } else if (thread.messages && thread.messages.length > 0) {
+        setMessages(thread.messages);
+      } else {
+        setMessages([]);
+      }
+
+      // Refresh persisted messages from Neon PostgreSQL (non-blocking paint)
       const token = await getIdToken();
       if (token) {
-        const msgs = await loadChatMessages(id, token);
-        setMessages(msgs);
-        setConversations((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, messages: msgs } : t))
-        );
-      } else {
-        setMessages(thread.messages || []);
+        setIsLoadingMessages(true);
+        try {
+          const msgs = await loadChatMessages(id, token);
+          setMessages(msgs);
+          setConversations((prev) =>
+            prev.map((t) => (t.id === id ? { ...t, messages: msgs } : t))
+          );
+          writeSessionCache({ messagesByChat: { [id]: msgs } });
+        } finally {
+          setIsLoadingMessages(false);
+        }
       }
     }
   };
@@ -1275,6 +1369,8 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         browserSession?: LiveBrowserState;
       } | null = null;
       let currentBrowserState: LiveBrowserState | undefined = undefined;
+      let thinkingIndicatorActive = false;
+      let firstTokenReceived = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1296,27 +1392,59 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               // Handle event types
               if (event.type === 'task.started') {
                 setAgentStatus('thinking');
-                activeExecution = {
-                  status: 'running',
-                  summary: event.message || 'Agent is working',
-                  steps: activeExecution ? activeExecution.steps : [],
-                  browserSession: currentBrowserState,
-                };
+
+                // "Thinking..." is the fast, ChatGPT-style pulsing indicator.
+                // It must NOT become a step in the completed activity list and
+                // we never show the generic "Agent is working" headline.
+                const startedMessage = event.message || '';
+                thinkingIndicatorActive =
+                  startedMessage === 'Thinking...' || startedMessage === '';
+                firstTokenReceived = false;
+
+                // Use the server-provided headline/plan (spoken plan) for the
+                // activity summary when present.
+                const summary =
+                  (event as any).headline && (event as any).headline !== 'Agent is working'
+                    ? (event as any).headline
+                    : thinkingIndicatorActive
+                    ? ''
+                    : startedMessage !== 'Agent is working'
+                    ? startedMessage
+                    : '';
+
+                // Only create the execution object if there is a real
+                // headline/plan to show. Pure "Thinking..." does not need it.
+                if (summary) {
+                  const understandStep: ActivityStep = {
+                    id: 'step_understand',
+                    title: 'Understanding request',
+                    status: 'completed',
+                    detail: (event as any).plan || summary,
+                  };
+                  activeExecution = {
+                    status: 'running',
+                    summary,
+                    steps: [understandStep],
+                    browserSession: currentBrowserState,
+                  };
+                }
                 setExecutionEvents((prev) => [...prev, event]);
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === assistantMsgId
-                      ? {
-                          ...msg,
-                          browserSession: currentBrowserState,
-                          execution: {
-                            id: `exec-${assistantMsgId}`,
-                            ...activeExecution!,
-                          },
-                        }
-                      : msg
-                  )
-                );
+                if (activeExecution) {
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMsgId
+                        ? {
+                            ...msg,
+                            browserSession: currentBrowserState,
+                            execution: {
+                              id: `exec-${assistantMsgId}`,
+                              ...activeExecution!,
+                            },
+                          }
+                        : msg
+                    )
+                  );
+                }
               } else if (event.type === 'task.progress') {
                 const stepId = event.stepId || `step_${(event.title || 'progress').toLowerCase().replace(/\s+/g, '_')}`;
                 const progressStep: ActivityStep = {
@@ -1535,6 +1663,11 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   )
                 );
               } else if (event.type === 'message.delta') {
+                // First assistant token clears the pulsing "Thinking..."
+                if (!firstTokenReceived) {
+                  firstTokenReceived = true;
+                  thinkingIndicatorActive = false;
+                }
                 setAgentStatus('responding');
                 if (typeof event.content === 'string') {
                   accumulatedText += event.content;
@@ -1552,6 +1685,8 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
               } else if (event.type === 'message.completed') {
                 if (typeof event.content === 'string') {
+                  firstTokenReceived = true;
+                  thinkingIndicatorActive = false;
                   accumulatedText = event.content;
                   setMessages((prev) =>
                     prev.map((msg) =>
@@ -1568,13 +1703,28 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               } else if (event.type === 'task.completed') {
                 setAgentStatus('completed');
                 setExecutionEvents((prev) => [...prev, event]);
+                thinkingIndicatorActive = false;
 
                 if (activeExecution) {
                   activeExecution = {
                     ...activeExecution,
                     status: 'completed',
-                    summary: event.message || 'Task completed successfully',
+                    summary:
+                      event.message && event.message !== 'Agent is working'
+                        ? event.message
+                        : 'Task completed',
                   };
+                }
+
+                // If the server delivered the final answer only in
+                // result.answer (no message.delta was streamed), copy it into
+                // the assistant message content so the table/answer is visible.
+                const resultAnswer =
+                  event.result && typeof event.result.answer === 'string'
+                    ? (event.result.answer as string)
+                    : '';
+                if (resultAnswer && !accumulatedText.trim()) {
+                  accumulatedText = resultAnswer;
                 }
 
                 setMessages((prev) =>
@@ -1583,6 +1733,8 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       ? {
                           ...msg,
                           isStreaming: false,
+                          content: accumulatedText || msg.content,
+                          text: accumulatedText || msg.text,
                           result: event.result,
                           execution: activeExecution
                             ? {
@@ -1595,6 +1747,36 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       : msg
                   )
                 );
+
+                // Persist the final assistant message to the session cache.
+                if (currentConversationId) {
+                  writeSessionCache({
+                    messagesByChat: {
+                      [currentConversationId]: [
+                        ...(readSessionCache().messagesByChat?.[currentConversationId] || []),
+                        ...[
+                          {
+                            id: userMsgId,
+                            role: 'user' as const,
+                            sender: 'user' as const,
+                            content: promptText,
+                            text: promptText,
+                            timestamp: timeStr,
+                          },
+                          {
+                            id: assistantMsgId,
+                            role: 'assistant' as const,
+                            sender: 'agent' as const,
+                            content: accumulatedText,
+                            text: accumulatedText,
+                            timestamp: timeStr,
+                            result: event.result,
+                          },
+                        ].filter((m) => m.content),
+                      ],
+                    },
+                  });
+                }
               } else if (event.type === 'task.failed') {
                 setAgentStatus('error');
                 setExecutionEvents((prev) => [...prev, event]);
@@ -1647,7 +1829,10 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
       }
 
-      // Finalize assistant message
+      // Finalize assistant message. Always mark execution.status completed so
+      // the activity spinner never gets stuck after the stream closes.
+      thinkingIndicatorActive = false;
+      let finalizedMessages: ChatMessage[] = [];
       setMessages((prev) => {
         const finalized = prev.map((msg) =>
           msg.id === assistantMsgId
@@ -1656,9 +1841,13 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 isStreaming: false,
                 content: accumulatedText || msg.content,
                 text: accumulatedText || msg.text,
+                execution: msg.execution
+                  ? { ...msg.execution, status: 'completed' as const }
+                  : msg.execution,
               }
             : msg
         );
+        finalizedMessages = finalized;
 
         setConversations((threads) =>
           threads.map((t) =>
@@ -1675,6 +1864,15 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         return finalized;
       });
+
+      // Refresh the cache with the finalized message list once React has
+      // applied the state update above.
+      if (currentConversationId && finalizedMessages.length > 0) {
+        writeSessionCache({
+          messagesByChat: { [currentConversationId]: finalizedMessages },
+          activeChatId: currentConversationId,
+        });
+      }
 
       setAgentStatus('idle');
     } catch (err: any) {
@@ -1721,6 +1919,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         closeMobileSidebar,
         conversations,
         currentConversationId,
+        isLoadingChats,
         createConversation,
         createNewTask,
         resetConversation,
@@ -1728,6 +1927,7 @@ export const AgentProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         deleteConversation,
         selectConversation,
         messages,
+        isLoadingMessages,
         agentStatus,
         taskStatus:
           agentStatus === 'thinking' || agentStatus === 'running_tool' || agentStatus === 'responding'

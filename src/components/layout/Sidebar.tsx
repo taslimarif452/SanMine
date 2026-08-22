@@ -30,7 +30,18 @@ export const Sidebar: React.FC = () => {
     deleteConversation,
     currentView,
     openSettings,
+    isLoadingChats,
   } = useAgent();
+
+  // Renders subtle skeleton rows while the chat list loads from Neon.
+  const renderSkeletonRows = (count = 6) =>
+    Array.from({ length: count }).map((_, i) => (
+      <div
+        key={`skeleton-${i}`}
+        className="sanmine-skeleton h-8 w-full"
+        style={{ animationDelay: `${i * 70}ms` }}
+      />
+    ));
 
   const { currentUser, signOut } = useAuth();
 
@@ -314,6 +325,10 @@ export const Sidebar: React.FC = () => {
   // Reusable conversation list content for expanded/mobile views
   const renderFullConversationList = () => (
     <>
+      {isLoadingChats && conversations.length === 0 && (
+        <div className="space-y-2 pt-1">{renderSkeletonRows(6)}</div>
+      )}
+
       {/* Today Group */}
       {groupedConversations.today.length > 0 && (
         <div className="space-y-1">

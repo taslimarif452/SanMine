@@ -109,3 +109,95 @@
   width: 100%;
 }
 
+/* ChatGPT-style pulsing "Thinking..." indicator, shown until the first
+   assistant token arrives. */
+.sanmine-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #6B6862;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  padding: 0.15rem 0;
+}
+
+.sanmine-thinking .sanmine-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #C66A3D;
+  opacity: 0.35;
+  animation: sanmine-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.sanmine-thinking .sanmine-thinking-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.sanmine-thinking .sanmine-thinking-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes sanmine-thinking-pulse {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Sidebar / chat-list loading skeleton */
+.sanmine-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #EAE8E1;
+  border-radius: 8px;
+}
+
+.sanmine-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  animation: sanmine-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes sanmine-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* GFM findings tables: sheet-like with sticky header, zebra rows, and a
+   comfortable min-width so columns don't collapse. */
+.chatgpt-markdown table,
+.sanmine-table-wrap table {
+  min-width: 640px;
+}
+
+.chatgpt-markdown thead th,
+.sanmine-table-wrap .sanmine-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.chatgpt-markdown tbody tr:nth-child(even),
+.sanmine-table-wrap .sanmine-tbody tr:nth-child(even) {
+  background: rgba(247, 246, 242, 0.7);
+}
+
+.chatgpt-markdown tbody tr:hover,
+.sanmine-table-wrap .sanmine-tbody tr:hover {
+  background: rgba(198, 106, 61, 0.06);
+}
+

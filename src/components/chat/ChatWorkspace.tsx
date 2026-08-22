@@ -56,7 +56,13 @@ export const ChatWorkspace: React.FC = () => {
     agentStatus,
     stopTask,
     configuredModels,
+    isLoadingMessages,
   } = useAgent();
+
+  // A message is still "thinking" when the assistant is streaming but has not
+  // produced any content yet (covers normal chat and agent work).
+  const isThinking = (msg: { isStreaming?: boolean; content?: string; text?: string }) =>
+    Boolean(msg.isStreaming) && !(msg.content || msg.text || '').trim();
 
   const [inputVal, setInputVal] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -331,6 +337,15 @@ export const ChatWorkspace: React.FC = () => {
           className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 pt-16 pb-6 w-full flex flex-col items-center"
         >
           <div className="w-full max-w-[840px] mx-auto space-y-6">
+            {/* Message-loading skeleton while a thread's messages fetch from Neon */}
+            {isLoadingMessages && messages.length === 0 && (
+              <div className="space-y-4 pt-2">
+                <div className="sanmine-skeleton h-4 w-1/3" />
+                <div className="sanmine-skeleton h-20 w-full" />
+                <div className="sanmine-skeleton h-4 w-1/2" />
+                <div className="sanmine-skeleton h-16 w-4/5" />
+              </div>
+            )}
             {/* Messages Stream */}
             {messages.map((msg) => {
               const isUser = msg.role === 'user' || msg.sender === 'user';
@@ -401,6 +416,13 @@ export const ChatWorkspace: React.FC = () => {
                             content={msg.content || msg.text || ''}
                             isStreaming={msg.isStreaming}
                           />
+                        ) : isThinking(msg) ? (
+                          <div className="sanmine-thinking" aria-label="Thinking">
+                            <span className="sanmine-thinking-dot" />
+                            <span className="sanmine-thinking-dot" />
+                            <span className="sanmine-thinking-dot" />
+                            <span className="ml-1">Thinking…</span>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2 py-2 text-sm text-[#9C988F]">
                             <span className="w-2 h-2 rounded-full bg-[#C66A3D] animate-pulse" />

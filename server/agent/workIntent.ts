@@ -47,6 +47,38 @@ const MARKET_RESEARCH =
 const COUNTRY_OR_REGION =
   /\b(US|USA|U\.S\.A?|United States|UK|United Kingdom|India|Canada|Australia|Germany|UAE|Singapore|Europe|America)\b/i;
 
+// Major Indian & international cities so Hinglish prompts like "Delhi me",
+// "Bangalore mein", "Mumbai me" resolve a location without a country keyword.
+const KNOWN_CITIES =
+  /\b(delhi|new delhi|mumbai|bangalore|bengaluru|hyderabad|chennai|kolkata|pune|ahmedabad|jaipur|lucknow|kanpur|nagpur|indore|bhopal|patna|ranchi|srinagar|chandigarh|gurgaon|gurugram|noida|faridabad|ghaziabad|surat|vadodara|kochi|kozhikode|trivandrum|thiruvananthapuram|visakhapatnam|coimbatore|mysore|madurai|bhubaneswar|guwahati|dehradun|amritsar|jodhpur|udaipur|indore|london|new york|san francisco|austin|toronto|berlin|dubai|singapore|sydney)\b/i;
+
+function extractLocationFromWorkPrompt(rawQuery: string): string {
+  if (!rawQuery) return '';
+  // "X mein/me/ki" Hinglish postposition pattern
+  const hindiPost = rawQuery.match(/\b([A-Za-z][A-Za-z.\-]{2,25})\s+(?:mein|me|ki|ke|ka|se|par)\b/i);
+  if (hindiPost && hindiPost[1]) {
+    const candidate = hindiPost[1];
+    if (KNOWN_CITIES.test(candidate) || COUNTRY_OR_REGION.test(candidate)) {
+      return candidate.charAt(0).toUpperCase() + candidate.slice(1).toLowerCase();
+    }
+  }
+  // "in <City>" / "near <City>" English pattern
+  const englishPrep = rawQuery.match(/\b(?:in|near|around|at)\s+([A-Za-z][A-Za-z.\-]{2,25})\b/i);
+  if (englishPrep && englishPrep[1]) {
+    const candidate = englishPrep[1];
+    if (KNOWN_CITIES.test(candidate) || COUNTRY_OR_REGION.test(candidate)) {
+      return candidate.charAt(0).toUpperCase() + candidate.slice(1).toLowerCase();
+    }
+  }
+  // Bare known city anywhere in the prompt
+  const bare = rawQuery.match(KNOWN_CITIES);
+  if (bare && bare[0]) {
+    const c = bare[0];
+    return c.split(/[\s-]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  }
+  return '';
+}
+
 /**
  * True when the message is a work / research / outreach delegation, not casual chat.
  */
@@ -95,6 +127,9 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
     if (/^(US|USA|U\.S\.A?|United States|America)$/i.test(raw)) location = 'United States';
     else if (/^(UK|United Kingdom)$/i.test(raw)) location = 'United Kingdom';
     else location = raw;
+  }
+  if (!location) {
+    location = extractLocationFromWorkPrompt(rawQuery);
   }
   if (!location && defaultLocation) location = defaultLocation.trim();
 
@@ -161,5 +196,80 @@ export function parseWorkGoal(prompt: string, defaultLocation?: string): WorkGoa
     searchQuery: searchParts || rawQuery.slice(0, 120),
     entities,
     rawQuery,
+  };
+}
+
+/**
+ * Lightweight user-facing intent classification used to pick the spoken
+ * "Understanding request" plan. Returns 'work' for delegated research /
+ * outreach and 'chat' for plain conversation or explanations.
+ */
+export function classifyUserIntent(text: string): 'work' | 'chat' {
+  return isWorkDelegationTask(text) ? 'work' : 'chat';
+}
+
+export interface SpokenWorkPlan {
+  /** One-line headline shown while the agent starts (never "Agent is working"). */
+  headline: string;
+  /** Short human-readable plan of what the agent will do. */
+  plan: string;
+}
+
+/**
+ * Produces a short, deterministic spoken plan for the activity header.
+ *
+ * Returns an object `{ headline, plan }` so call sites can render both a
+ * concise headline and a slightly more descriptive plan without any LLM call.
+ * `classifyUserIntent` should be consulted first: for casual chat this is not
+ * used (the normal chat path streams directly).
+ */
+export function describeWorkPlanForUser(
+  prompt: string,
+  defaultLocation?: string
+): SpokenWorkPlan {
+  const goal = parseWorkGoal(prompt, defaultLocation);
+  const subject =
+    goal.industry ||
+    (goal.entities && goal.entities.length > 0 ? goal.entities.join(', ') : '') ||
+    'companies';
+  const where = goal.location || defaultLocation || '';
+
+  const fieldLabels: string[] = [];
+  if (goal.requestedFields.includes('founder')) fieldLabels.push('decision makers');
+  if (goal.requestedFields.includes('email')) fieldLabels.push('contact emails');
+  if (goal.requestedFields.includes('phone')) fieldLabels.push('phone numbers');
+  if (goal.requestedFields.includes('pricing')) fieldLabels.push('pricing');
+  if (goal.requestedFields.includes('services')) fieldLabels.push('services');
+  if (goal.requestedFields.includes('website')) fieldLabels.push('websites');
+
+  const qty = goal.quantity > 1 ? goal.quantity : '';
+  const locationPhrase = where ? ` in ${where}` : '';
+  const targetPhrase = [qty, subject].filter(Boolean).join(' ').trim();
+  const targetWithLocation = `${targetPhrase}${locationPhrase}`.trim();
+
+  let headline: string;
+  if (goal.emailActionsRequired) {
+    headline = `Researching ${targetWithLocation} and preparing outreach`;
+  } else if (goal.proposalRequired) {
+    headline = `Researching ${targetWithLocation} and drafting proposals`;
+  } else {
+    headline = `Researching ${targetWithLocation}`;
+  }
+
+  const steps: string[] = [];
+  steps.push(`Search the live web for ${targetPhrase}`);
+  steps.push('Open and inspect official pages');
+  if (fieldLabels.length > 0) {
+    steps.push(`Extract verified ${fieldLabels.join(', ')}`);
+  } else {
+    steps.push('Extract verified findings');
+  }
+  if (goal.proposalRequired) steps.push('Draft grounded proposals');
+  if (goal.emailActionsRequired) steps.push('Send via connected Gmail (with confirmation)');
+  steps.push('Compile a sourced findings table');
+
+  return {
+    headline,
+    plan: steps.join(' → '),
   };
 }
