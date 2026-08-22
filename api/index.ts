@@ -235,6 +235,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
           hasEncryptionKey: !!process.env.CREDENTIAL_ENCRYPTION_KEY,
           hasFirebaseAdminKey: !!process.env.FIREBASE_SERVICE_ACCOUNT_KEY,
+          // Web search provider availability — booleans ONLY. Key values are
+          // never logged, returned, or sent to the frontend.
+          hasTavilyKey: !!(process.env.TAVILY_API_KEY || process.env.TAVILY_KEY),
+          hasSerperKey: !!(process.env.SERPER_API_KEY || process.env.SERPER_KEY),
           appUrl: process.env.APP_URL || 'https://sanmine.space',
         },
         diagnostics: {
@@ -242,6 +246,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           firebaseConfigured: !!(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_CONFIG),
           gmailConfigured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
           geminiConfigured: !!process.env.GEMINI_API_KEY,
+          webSearchConfigured: !!(process.env.TAVILY_API_KEY || process.env.TAVILY_KEY || process.env.SERPER_API_KEY || process.env.SERPER_KEY),
         },
       });
     }
@@ -271,24 +276,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     // 4. Lightweight Search Providers Status (Public Metadata)
+    //    The built-in "API-Free Web Research Engine" is an internal fallback
+    //    and is intentionally hidden from the end-user UI.
     if (method === 'GET' && (pathname === '/api/search/providers' || pathname === '/search/providers')) {
       return sendJson(res, 200, {
         managedBySanmine: true,
         isConfigured: true,
-        providers: [
-          {
-            id: 'web_research',
-            name: 'API-Free Web Research Engine',
-            badge: 'Built-in Engine',
-            description: 'Autonomous public web discovery and direct HTTPS research engine.',
-            requiresKey: false,
-            isConfigured: true,
-            helpUrl: '',
-            helpText: '',
-            keyPlaceholder: '',
-          },
-        ],
-        activeProviderId: 'web_research',
+        providers: [],
+        activeProviderId: 'none',
       });
     }
 

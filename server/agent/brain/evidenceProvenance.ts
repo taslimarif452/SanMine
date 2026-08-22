@@ -597,6 +597,32 @@ export class EvidenceProvenanceEngine {
     }
     lines.push('');
 
+    // --- 1b. HONEST VERIFICATION TABLE ---
+    // Requested / Verified / Could not verify counts followed by a
+    // Company | Website | Decision maker | Email | Status table. Emails that
+    // are not public are always shown as "Not found" — never invented.
+    const couldNotVerify = Math.max(0, targetQuantity - verifiedCount);
+    lines.push(`**Requested:** ${targetQuantity} | **Verified:** ${verifiedCount} | **Could not verify:** ${couldNotVerify}`);
+    lines.push('');
+    lines.push(`| Company | Website | Decision maker | Email | Status |`);
+    lines.push(`| --- | --- | --- | --- | --- |`);
+    if (qualifiedEntities.length > 0) {
+      for (const ent of qualifiedEntities) {
+        const company = ent.name || 'Unknown';
+        const website = ent.url || ent.website || (ent.hasWebsite === false ? 'No website' : 'Not found');
+        // Decision maker / founder is surfaced only if explicitly captured in
+        // facts; otherwise "Not found" — never invented.
+        const dmFact = (ent.facts || []).find((f) => /founder|decision.?maker|ceo|owner|director/i.test(f.field));
+        const decisionMaker = dmFact?.extractedValue || 'Not found';
+        const email = ent.email ? `\`${ent.email}\`` : 'Not found';
+        const status = ent.status || ent.verificationStatus || 'Verified';
+        lines.push(`| ${company} | ${website} | ${decisionMaker} | ${email} | ${status} |`);
+      }
+    } else {
+      lines.push(`| — | — | — | Not found | Could not verify (live search returned 0 results; nothing invented) |`);
+    }
+    lines.push('');
+
     // --- 2. SUMMARY ---
     lines.push(`### Summary\n`);
     lines.push(`The SanMine Universal Agent executed autonomous multi-step research and action pipelines for the objective: "${state.plan.goal}".`);

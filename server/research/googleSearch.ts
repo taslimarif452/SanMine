@@ -13,7 +13,7 @@ export interface GoogleSearchResultItem {
   url: string;
   snippet: string;
   domain: string;
-  sourceEngine: 'google' | 'bing' | 'duckduckgo' | 'osm';
+  sourceEngine: 'google' | 'bing' | 'duckduckgo' | 'osm' | 'tavily' | 'serper';
   isOfficialWebsite?: boolean;
   isSocialProfile?: boolean;
   isDirectory?: boolean;
@@ -28,6 +28,11 @@ export interface GoogleSearchResponse {
   engineUsed: string;
   error?: string;
 }
+
+import {
+  performOfficialWebSearch,
+  toGoogleSearchResultItems,
+} from './officialSearch.js';
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -169,6 +174,12 @@ export function cleanSearchDestinationUrl(rawUrl: string): string {
 
 /**
  * Performs Google-first live search across internet index layers.
+ *
+ * Official (key-based) providers Tavily → Serper are consulted FIRST via
+ * `performOfficialWebSearch`. If they return hits the HTML scraping layer
+ * (Google / Bing / DuckDuckGo / OSM) is skipped entirely. If no keys are
+ * configured, both official providers fail over, or they return zero hits,
+ * the legacy HTML fallback runs.
  */
 export async function performGoogleWebSearch(
   query: string,
@@ -206,6 +217,49 @@ export async function performGoogleWebSearch(
   const items: GoogleSearchResultItem[] = [];
   const seenUrls = new Set<string>();
   let engineUsed = 'google';
+
+  // --------------------------------------------------------------------------
+  // OFFICIAL (KEY-BASED) SEARCH LAYER — Tavily → Serper with auto-failover.
+  // If either provider returns hits we SKIP the HTML scraping layer entirely.
+  // No keys configured or both providers exhausted → honest 0 from this layer,
+  // and we fall through to the legacy HTML engines below.
+  // --------------------------------------------------------------------------
+  try {
+    const official = await performOfficialWebSearch(targetQuery, {
+      limit,
+      timeoutMs,
+    });
+    if (official.success && official.items.length > 0) {
+      const officialItems = toGoogleSearchResultItems(official.items);
+      console.log(
+        `[SEARCH COMPLETE]\nquery="${targetQuery}"\nresultsFound=${officialItems.length}\nengine=${official.providerUsed}`
+      );
+      return {
+        query: targetQuery,
+        success: true,
+        items: officialItems.slice(0, limit),
+        totalResults: officialItems.length,
+        engineUsed: official.providerUsed,
+      };
+    }
+
+    if (!official.hasAnyKey) {
+      // Honest signal: no keys configured. Fall through to HTML layer; this
+      // function MUST NOT invent companies or emails when it ultimately
+      // returns nothing.
+      console.log('[SEARCH] No official search keys configured; falling back to HTML search index.');
+    } else if (official.providerUsed === 'none' && official.items.length === 0) {
+      console.log(
+        `[SEARCH] Official search (attempted: ${official.providersAttempted.join(', ') || 'none'}; ` +
+          `cooldown: ${official.cooldownProviders.join(', ') || 'none'}) returned 0 hits; ` +
+          `falling back to HTML search index.`
+      );
+    }
+  } catch (officialErr: any) {
+    // Never let a failure in the official layer break the whole search.
+    console.warn('[SEARCH] Official search layer error; falling back to HTML:', officialErr?.message);
+  }
+
 
   const addItem = (
     title: string,
